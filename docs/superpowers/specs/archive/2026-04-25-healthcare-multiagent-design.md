@@ -2,6 +2,7 @@
 
 > **Approach:** Living Trust Layer over two-tier coverage (HAS-AGENT / NO-AGENT) with outcome-conditioned learning and Agent Reputation Score
 > **Deployment target:** Databricks-native (Databricks App + Mosaic AI Agent Framework + Unity Catalog + Lakeflow/DLT + MLflow 3 + Genie Code + Vector Search)
+> **Edition:** **Databricks Trial for Work (14-day Premium, $400 credits)** — restores Supervisor Agent + Knowledge Assistant + Online Tables + multi-App that Free Edition explicitly blocks. See `research/09-databricks-editions.md` for the full audit.
 > **Challenge:** Serving A Nation — Building Agentic Healthcare Maps for 1.4 Billion Lives (Challenge 03, see `docs/challenge-brief.md`)
 > **Last updated:** 2026-04-25
 

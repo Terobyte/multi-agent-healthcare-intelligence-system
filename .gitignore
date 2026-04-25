@@ -10,7 +10,14 @@ data/raw/
 data/*.csv
 data/*.parquet
 data/*.zip
+data/*.xlsx
 !data/.gitkeep
+# but DO commit small derived artifacts (e.g. LLM scoring results)
+!data/llm_artifacts/
+
+# editor swap files
+*.swp
+*.swo
 
 # private team profiles — never commit
 team.md

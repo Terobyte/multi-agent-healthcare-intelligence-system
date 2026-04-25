@@ -12,6 +12,7 @@ Drop Gemini Deep Research outputs here, one file per task. Naming: `NN-short-top
 6. `06-bed-occupancy-forecasting-lit.md` — academic work on bed availability prediction
 7. `07-asha-anm-tooling.md` — frontline worker tooling reality
 8. `08-databricks-challenge-priors.md` — past Databricks healthcare hackathon signals
+9. `09-databricks-editions.md` — Free Edition vs Trial for Work feature audit + H 0 validation gates
 
 ## How to consume
 

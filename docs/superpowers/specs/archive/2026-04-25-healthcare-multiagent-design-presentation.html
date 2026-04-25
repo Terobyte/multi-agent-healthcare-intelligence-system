@@ -1,0 +1,949 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Healthcare Multi-Agent Intelligence — Problem-Focused Presentation</title>
+  <style>
+    :root {
+      --bg: #06131f;
+      --panel: rgba(7, 24, 39, 0.82);
+      --panel-strong: rgba(9, 30, 48, 0.95);
+      --text: #eff7f8;
+      --muted: #9ec0ca;
+      --accent: #41d6b7;
+      --accent-2: #ff8f5a;
+      --accent-3: #92c9ff;
+      --danger: #ff6d7a;
+      --warning: #ffd36b;
+      --line: rgba(255, 255, 255, 0.11);
+      --shadow: 0 24px 80px rgba(0, 0, 0, 0.38);
+      --radius: 24px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(65, 214, 183, 0.14), transparent 32%),
+        radial-gradient(circle at bottom right, rgba(146, 201, 255, 0.18), transparent 28%),
+        linear-gradient(135deg, #04101a 0%, #071827 42%, #0a2336 100%);
+      color: var(--text);
+      overflow: hidden;
+    }
+
+    body::before,
+    body::after {
+      content: "";
+      position: fixed;
+      inset: auto;
+      border-radius: 999px;
+      filter: blur(30px);
+      pointer-events: none;
+      opacity: 0.9;
+    }
+
+    body::before {
+      top: 6vh;
+      right: 10vw;
+      width: 18rem;
+      height: 18rem;
+      background: rgba(255, 143, 90, 0.12);
+    }
+
+    body::after {
+      left: 6vw;
+      bottom: 8vh;
+      width: 20rem;
+      height: 20rem;
+      background: rgba(65, 214, 183, 0.1);
+    }
+
+    .deck {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+    }
+
+    .slide {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 1.4rem;
+      padding: 4vh 4vw 8vh;
+      opacity: 0;
+      transform: translateX(32px) scale(0.985);
+      transition: opacity 260ms ease, transform 260ms ease;
+      pointer-events: none;
+      align-items: stretch;
+      overflow: hidden;
+    }
+
+    .slide.active {
+      opacity: 1;
+      transform: translateX(0) scale(1);
+      pointer-events: auto;
+    }
+
+    .slide.single {
+      grid-template-columns: 1fr;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px);
+      padding: 1.5rem 1.8rem;
+      overflow-y: auto;
+      min-height: 0;
+    }
+
+    .panel::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .panel::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.12);
+      border-radius: 999px;
+    }
+
+    .hero {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 1.2rem;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.6rem;
+      padding: 0.4rem 0.8rem;
+      border-radius: 999px;
+      color: var(--accent);
+      border: 1px solid rgba(65, 214, 183, 0.3);
+      background: rgba(65, 214, 183, 0.08);
+      font-size: 0.82rem;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      width: fit-content;
+    }
+
+    h1, h2 {
+      margin: 0;
+      line-height: 1.0;
+      letter-spacing: -0.025em;
+    }
+
+    h1 {
+      font-size: clamp(2.4rem, 4.6vw, 4.4rem);
+      max-width: 14ch;
+      margin-top: 1rem;
+    }
+
+    h2 {
+      font-size: clamp(1.8rem, 3.2vw, 3rem);
+      max-width: 13ch;
+      margin-top: 0.6rem;
+    }
+
+    .subtitle {
+      margin-top: 0.9rem;
+      max-width: 42rem;
+      font-size: clamp(0.95rem, 1.3vw, 1.15rem);
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    .stats,
+    .grid,
+    .two-up {
+      display: grid;
+      gap: 0.8rem;
+      min-height: 0;
+    }
+
+    .stats {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      margin-top: 1.2rem;
+    }
+
+    .stat,
+    .card,
+    .problem,
+    .solution,
+    .quote,
+    .step {
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.03);
+      padding: 0.9rem 1rem;
+    }
+
+    .stat-value {
+      font-size: clamp(1.3rem, 2.2vw, 2rem);
+      font-weight: 700;
+      color: var(--accent-3);
+      margin-bottom: 0.3rem;
+      line-height: 1.05;
+    }
+
+    .stat-label,
+    .card p,
+    .problem p,
+    .solution p,
+    .quote p,
+    .step p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.45;
+      font-size: 0.92rem;
+    }
+
+    .aside {
+      display: flex;
+      flex-direction: column;
+      gap: 0.8rem;
+      min-height: 0;
+    }
+
+    .aside .panel {
+      flex: 1 1 0;
+    }
+
+    .aside h3,
+    .card h3,
+    .problem h3,
+    .solution h3,
+    .step h3 {
+      margin: 0 0 0.5rem;
+      font-size: 1rem;
+      letter-spacing: 0.01em;
+    }
+
+    .quote {
+      background: linear-gradient(180deg, rgba(255, 143, 90, 0.08), rgba(255, 255, 255, 0.03));
+      border-color: rgba(255, 143, 90, 0.2);
+    }
+
+    .quote strong {
+      color: var(--warning);
+    }
+
+    .grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .problem {
+      background: linear-gradient(180deg, rgba(255, 109, 122, 0.08), rgba(255, 255, 255, 0.03));
+      border-color: rgba(255, 109, 122, 0.16);
+    }
+
+    .problem h3 {
+      color: #ffd7db;
+    }
+
+    .solution {
+      background: linear-gradient(180deg, rgba(65, 214, 183, 0.08), rgba(255, 255, 255, 0.03));
+      border-color: rgba(65, 214, 183, 0.18);
+    }
+
+    .solution h3 {
+      color: #d4fff5;
+    }
+
+    ul {
+      margin: 0;
+      padding-left: 1.1rem;
+      color: var(--text);
+      line-height: 1.45;
+      font-size: 0.95rem;
+    }
+
+    li + li {
+      margin-top: 0.35rem;
+    }
+
+    .accent {
+      color: var(--accent);
+    }
+
+    .warning {
+      color: var(--warning);
+    }
+
+    .danger {
+      color: var(--danger);
+    }
+
+    .big-list {
+      display: grid;
+      gap: 0.7rem;
+      margin-top: 1.1rem;
+      min-height: 0;
+    }
+
+    .big-list .card {
+      padding: 0.9rem 1.05rem;
+    }
+
+    .big-list strong {
+      display: block;
+      margin-bottom: 0.25rem;
+      font-size: 0.98rem;
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 0.65rem;
+      margin-top: 1.1rem;
+    }
+
+    .step {
+      min-height: 0;
+    }
+
+    .step span {
+      display: inline-block;
+      margin-bottom: 0.5rem;
+      font-size: 0.78rem;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .step h3 {
+      margin-bottom: 0.4rem;
+      font-size: 0.95rem;
+    }
+
+    .step p {
+      font-size: 0.85rem;
+      line-height: 1.4;
+    }
+
+    .matrix {
+      display: grid;
+      gap: 0.65rem;
+      margin-top: 1rem;
+      min-height: 0;
+    }
+
+    .matrix .card {
+      display: grid;
+      grid-template-columns: 0.8fr 1.2fr;
+      gap: 0.85rem;
+      align-items: start;
+      padding: 0.85rem 1rem;
+    }
+
+    .matrix .card strong {
+      font-size: 1rem;
+      color: var(--text);
+    }
+
+    .closing {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.7rem;
+      margin-top: 1.2rem;
+    }
+
+    .closing .card {
+      background: linear-gradient(180deg, rgba(146, 201, 255, 0.08), rgba(255, 255, 255, 0.03));
+    }
+
+    .footer {
+      position: fixed;
+      left: 5vw;
+      right: 5vw;
+      bottom: 2.5vh;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      z-index: 20;
+    }
+
+    .progress {
+      flex: 1;
+      height: 6px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.08);
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .progress-bar {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, var(--accent), var(--accent-3));
+      transition: width 220ms ease;
+    }
+
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+
+    .key {
+      padding: 0.25rem 0.5rem;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text);
+    }
+
+    .slide-number {
+      min-width: 5rem;
+      text-align: right;
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+      font-size: 0.85rem;
+    }
+
+    @media (max-width: 1100px) {
+      body {
+        overflow: auto;
+      }
+
+      .deck {
+        height: auto;
+        min-height: 100vh;
+      }
+
+      .slide,
+      .slide.single {
+        position: relative;
+        opacity: 1;
+        pointer-events: auto;
+        transform: none;
+        grid-template-columns: 1fr;
+        min-height: 100vh;
+        padding-bottom: 8rem;
+        overflow: visible;
+      }
+
+      .panel {
+        overflow-y: visible;
+      }
+
+      .flow,
+      .grid,
+      .stats,
+      .closing,
+      .matrix .card {
+        grid-template-columns: 1fr;
+      }
+
+      .footer {
+        position: sticky;
+        bottom: 0;
+        padding-bottom: 1rem;
+      }
+    }
+
+    @media (max-height: 760px) {
+      .slide {
+        padding: 3vh 4vw 7vh;
+      }
+
+      h1 {
+        font-size: clamp(2rem, 3.8vw, 3.4rem);
+      }
+
+      h2 {
+        font-size: clamp(1.5rem, 2.6vw, 2.4rem);
+      }
+
+      .subtitle {
+        font-size: 0.95rem;
+      }
+
+      .panel {
+        padding: 1.2rem 1.5rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="deck">
+    <section class="slide active" data-title="Hero">
+      <div class="panel hero">
+        <div>
+          <div class="eyebrow">Healthcare Multi-Agent Intelligence</div>
+          <h1>Not a hospital map — a system against false availability</h1>
+          <p class="subtitle">
+            This architecture doesn't solve the problem of finding the nearest clinic. It solves the problem of <span class="warning">time wasted on broken promises</span>:
+            the bed exists in the report, but there's no oxygen, no doctor, no drug, or no real readiness to admit the patient.
+          </p>
+          <div class="stats">
+            <div class="stat">
+              <div class="stat-value">10,000+</div>
+              <div class="stat-label">messy facility records where we need to extract truth from text</div>
+            </div>
+            <div class="stat">
+              <div class="stat-value">4/4</div>
+              <div class="stat-label">verified together: bed, oxygen, drug, specialist</div>
+            </div>
+            <div class="stat">
+              <div class="stat-value">T+2h</div>
+              <div class="stat-label">patient feedback turns the system self-correcting</div>
+            </div>
+          </div>
+        </div>
+        <div class="quote">
+          <p><strong>Core idea:</strong> in Indian healthcare, the crisis isn't a lack of directories — it's that families and doctors can't tell <span class="accent">who's actually ready to help right now</span>.</p>
+        </div>
+      </div>
+      <div class="aside">
+        <div class="panel">
+          <h3>What broke before</h3>
+          <ul>
+            <li>Ghost beds: a bed shows on the dashboard, but in reality there's no oxygen or staff.</li>
+            <li>Manual updates: one officer updates a form with hours of lag.</li>
+            <li>No coordination: ambulance, doctor slot, and drug availability live in separate systems.</li>
+            <li>No memory of dishonesty: a hospital can promise one thing and face no consequences.</li>
+          </ul>
+        </div>
+        <div class="panel">
+          <h3>What this deck sells</h3>
+          <ul>
+            <li><span class="accent">Verify-All-4</span> instead of bed-only dashboards.</li>
+            <li><span class="accent">Book-All-4</span> instead of phone calls and manual coordination.</li>
+            <li><span class="accent">Living Trust</span> instead of binary "available / not available".</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" data-title="System Failure">
+      <div class="panel">
+        <div class="eyebrow">Problem 01</div>
+        <h2>Government bed dashboards have already lost</h2>
+        <p class="subtitle">
+          Postmortem research shows a repeating pattern: data goes stale, beds are counted without clinical readiness,
+          patients travel for hours and are turned away on arrival.
+        </p>
+        <div class="big-list">
+          <div class="problem">
+            <h3>Phantom beds</h3>
+            <p>A bed shows as available, but the hospital has no working oxygen, no critical drugs, or no relevant doctor on shift.</p>
+          </div>
+          <div class="problem">
+            <h3>Human-in-the-loop latency</h3>
+            <p>Manual updates in a web form lag 12+ hours. Such a dashboard isn't just useless — it actively misroutes ambulances.</p>
+          </div>
+          <div class="problem">
+            <h3>No queue, no commitment</h3>
+            <p>Even if a bed is "available," nobody reserves the ambulance, doctor slot, and drugs as a single bundle.</p>
+          </div>
+        </div>
+      </div>
+      <div class="aside">
+        <div class="panel">
+          <h3>Key numbers from the postmortem</h3>
+          <ul>
+            <li>Punjab audit: Tocilizumab stockout lasted <span class="danger">294 days</span>.</li>
+            <li>Liquid oxygen tanks were purchased but <span class="danger">never connected to the pipeline</span>.</li>
+            <li>By 2024–2025 many state dashboards went dead, stale, or repurposed.</li>
+          </ul>
+        </div>
+        <div class="quote">
+          <p><strong>Implication:</strong> if we just show another list of beds, we repeat a proven failure. We have to sell <span class="warning">clinical readiness</span>, not "bed presence".</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" data-title="Trust Gap">
+      <div class="panel">
+        <div class="eyebrow">Problem 02</div>
+        <h2>The truth gap in the data kills trust</h2>
+        <p class="subtitle">
+          The dataset isn't normalized: capabilities are described in free-form notes, claims contradict equipment logs,
+          and a hospital's formal status doesn't guarantee operational readiness.
+        </p>
+        <div class="grid" style="margin-top:1.2rem;">
+          <div class="problem">
+            <h3>"Advanced Surgery" with no anesthesiologist</h3>
+            <p>The system has to do more than extract claims — it must flag suspicious ones, so the score isn't blindly trusted.</p>
+          </div>
+          <div class="problem">
+            <h3>"24/7 availability" with no night-shift staff</h3>
+            <p>A phrase in a report doesn't equal operational availability in the moment.</p>
+          </div>
+          <div class="problem">
+            <h3>Static lists without confidence</h3>
+            <p>When the source is stale or indirect, showing a deterministic answer is more dangerous than honestly showing uncertainty.</p>
+          </div>
+          <div class="solution">
+            <h3>Why multi-agent is the right answer</h3>
+            <p>One agent extracts, a second validates, a third routes. This is architecture against false confidence — not orchestration for orchestration's sake.</p>
+          </div>
+        </div>
+      </div>
+      <div class="aside">
+        <div class="panel">
+          <h3>What the system actually solves</h3>
+          <ul>
+            <li>Extracts capability signals from 10k unstructured records.</li>
+            <li>Flags contradictions and lowers Trust instead of hiding the problem.</li>
+            <li>Shows citations down to the specific line in the report.</li>
+          </ul>
+        </div>
+        <div class="quote">
+          <p><strong>Core UX principle:</strong> better to show <span class="accent">0.62 ± 0.11</span> and explain why than to lie with the word "available".</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide single" data-title="Problem-Solution Map">
+      <div class="panel">
+        <div class="eyebrow">Problem → Solution</div>
+        <h2>Every module exists because it fixes a specific failure</h2>
+        <div class="matrix">
+          <div class="card">
+            <strong>False beds</strong>
+            <p><span class="accent">TrustScorer</span> checks bed + oxygen + drug + specialist, not bed count, and computes overall Trust as the product of those factors.</p>
+          </div>
+          <div class="card">
+            <strong>No ground truth in Tier 2</strong>
+            <p><span class="accent">Predictor + Voice fallback</span> give a probabilistic estimate and a rare live call only where confidence is genuinely weak.</p>
+          </div>
+          <div class="card">
+            <strong>Text lies or contradicts itself</strong>
+            <p><span class="accent">Validator Agent</span> catches absurd claims and prevents the router from building decisions on hallucinations.</p>
+          </div>
+          <div class="card">
+            <strong>Even the right choice falls apart on execution</strong>
+            <p><span class="accent">Atomic Booking</span> reserves four resources in one transaction. If anything fails, it rolls everything back instead of leaving the family with half a confirmation.</p>
+          </div>
+          <div class="card">
+            <strong>Hospitals can promise and forget</strong>
+            <p><span class="accent">Outcome Loop + Agent Reputation</span> create an economy of honesty: lie via agent handshake, lose trust, drop in ranking.</p>
+          </div>
+          <div class="card">
+            <strong>NGOs see the map but not the gaps</strong>
+            <p><span class="accent">Desert Dashboard</span> shows capability gaps by PIN code and turns routing data into planning intelligence.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" data-title="Verify All 4">
+      <div class="panel">
+        <div class="eyebrow">Solution 01</div>
+        <h2>Verify-All-4 removes the most expensive type of error</h2>
+        <p class="subtitle">
+          The costliest error in this system isn't "choosing hospital #2 instead of #1" — it's <span class="danger">sending a patient to a place that's only ready on paper</span>.
+          So we verify the four dependencies without which the care path collapses anyway.
+        </p>
+        <div class="flow">
+          <div class="step">
+            <span>Factor 1</span>
+            <h3>Bed</h3>
+            <p>A place to receive the patient now, not just formal capacity in a table.</p>
+          </div>
+          <div class="step">
+            <span>Factor 2</span>
+            <h3>Oxygen</h3>
+            <p>A bed without a working oxygen pipeline may be physical, but not clinically viable.</p>
+          </div>
+          <div class="step">
+            <span>Factor 3</span>
+            <h3>Drug</h3>
+            <p>The needed drug must be in stock, otherwise the transfer ends in delayed treatment.</p>
+          </div>
+          <div class="step">
+            <span>Factor 4</span>
+            <h3>Specialist</h3>
+            <p>Even the right hospital is useless if the relevant specialist isn't on shift.</p>
+          </div>
+          <div class="step">
+            <span>Result</span>
+            <h3>Living Trust</h3>
+            <p>The system returns probability + confidence interval + freshness, not fake precision.</p>
+          </div>
+        </div>
+      </div>
+      <div class="aside">
+        <div class="panel">
+          <h3>Why this beats a bed dashboard</h3>
+          <ul>
+            <li>Reduces false positives in the most dangerous cases.</li>
+            <li>Shifts the conversation from "how many beds" to "is the care path ready".</li>
+            <li>Gives the judge and the user a clear mental model of the decision.</li>
+          </ul>
+        </div>
+        <div class="quote">
+          <p><strong>Pitch line:</strong> bed-only systems optimize for the visibility of capacity; we optimize for <span class="accent">the probability of treatment actually starting</span>.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" data-title="Two Tiers">
+      <div class="panel">
+        <div class="eyebrow">Solution 02</div>
+        <h2>The two-tier model solves partial coverage from day one</h2>
+        <p class="subtitle">
+          The most practical trap in any healthcare platform: waiting for every hospital to integrate. This system doesn't wait.
+          It runs in two modes, preserving coverage from the start.
+        </p>
+        <div class="grid" style="margin-top:1.2rem;">
+          <div class="solution">
+            <h3>Tier 1: HAS-AGENT</h3>
+            <p>The hospital's IntakeAgent answers yes/no queries from HMIS, pharmacy ERP, and staff schedule. Fresh, signed handshakes and the highest trust ceiling.</p>
+          </div>
+          <div class="solution">
+            <h3>Tier 2: NO-AGENT</h3>
+            <p>Predictor + extraction + crowd / outcome signals cover the market without deep integration. Coverage exists day one — not "after the enterprise rollout".</p>
+          </div>
+          <div class="problem">
+            <h3>Without Tier 2</h3>
+            <p>The system would become an elitist network of a few digitized hospitals and would lose the challenge on scale and social impact.</p>
+          </div>
+          <div class="problem">
+            <h3>Without the Tier 1 incentive</h3>
+            <p>Hospitals would have no reason to give quality signals. Here, onboarding earns a higher Trust ceiling and more patients.</p>
+          </div>
+        </div>
+      </div>
+      <div class="aside">
+        <div class="panel">
+          <h3>What failure this fixes</h3>
+          <ul>
+            <li>We can't wait for full digitization across the country.</li>
+            <li>We can't tie UX to a single type of integration.</li>
+            <li>We need scale and a gradient of trust at the same time.</li>
+          </ul>
+        </div>
+        <div class="quote">
+          <p><strong>Strong framing:</strong> Tier 1 and Tier 2 aren't a compromise. They're a way to honestly say <span class="warning">where we know and where we only estimate</span>.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" data-title="Atomic Booking">
+      <div class="panel">
+        <div class="eyebrow">Solution 03</div>
+        <h2>Atomic Booking closes the coordination collapse</h2>
+        <p class="subtitle">
+          Even the right recommendation is useless if the family then has to manually arrange bed, ambulance, doctor slot, and drug queue separately.
+          Coordination has to be part of the product, not an external process.
+        </p>
+        <div class="big-list">
+          <div class="solution">
+            <h3>What gets reserved in one transaction</h3>
+            <p>Bed reservation, ambulance dispatch, doctor slot, and drug reservation commit as a single bundle in Delta ACID.</p>
+          </div>
+          <div class="solution">
+            <h3>What happens on failure</h3>
+            <p>If even one resource fails, the transaction rolls back fully and the system automatically suggests the next hospital, never creating partial promises.</p>
+          </div>
+          <div class="problem">
+            <h3>What the world looks like without this</h3>
+            <p>The family has a "confirmation" for a bed but no drug; the ambulance is en route but the doctor isn't there; the transfer technically started, clinically failed.</p>
+          </div>
+        </div>
+      </div>
+      <div class="aside">
+        <div class="panel">
+          <h3>Why this is an especially strong demo moment</h3>
+          <ul>
+            <li>Shows the system doesn't just reason — it drives to operational action.</li>
+            <li>Sells the Databricks-native story through the Delta ACID transaction.</li>
+            <li>Clearly answers "and what happens after the recommendation?".</li>
+          </ul>
+        </div>
+        <div class="quote">
+          <p><strong>Slide line:</strong> we don't send the patient "somewhere to go". We reserve <span class="accent">the entire path to care</span>.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" data-title="Learning Loop">
+      <div class="panel">
+        <div class="eyebrow">Solution 04</div>
+        <h2>Outcome Loop turns errors into a training signal</h2>
+        <p class="subtitle">
+          Most healthcare registries decay because they never learn how the actual patient experience ended.
+          Here, feedback two hours after routing keeps trust living and self-correcting.
+        </p>
+        <div class="grid" style="margin-top:1.2rem;">
+          <div class="solution">
+            <h3>The patient confirms reality</h3>
+            <p>An SMS / WhatsApp question on bed, drug, and specialist gives ground truth without building heavy hospital-side telemetry everywhere.</p>
+          </div>
+          <div class="solution">
+            <h3>The Predictor improves</h3>
+            <p>For Tier 2, the outcome signal provides real labels — exactly what historical bed dashboards always lacked.</p>
+          </div>
+          <div class="solution">
+            <h3>Agent Reputation punishes dishonesty</h3>
+            <p>If a Tier 1 hospital lies through its IntakeAgent, its reputation and Trust ceiling drop automatically.</p>
+          </div>
+          <div class="problem">
+            <h3>Without this, every system ages</h3>
+            <p>No memory of failure, no mechanism for trust decay, no incentives for honesty. In a couple of months the dashboard becomes another beautiful but dishonest layer.</p>
+          </div>
+        </div>
+      </div>
+      <div class="aside">
+        <div class="panel">
+          <h3>New value</h3>
+          <ul>
+            <li>The system doesn't just find a hospital — it measures its own truthfulness.</li>
+            <li>Every refusal or mismatch improves future ranking.</li>
+            <li>A rare case where the UX loop directly strengthens model quality.</li>
+          </ul>
+        </div>
+        <div class="quote">
+          <p><strong>Strong line:</strong> honest hospitals get more traffic; lying hospitals are <span class="danger">pushed down by the algorithm itself</span>.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" data-title="Social Impact">
+      <div class="panel">
+        <div class="eyebrow">Solution 05</div>
+        <h2>The NGO dashboard solves invisible medical deserts</h2>
+        <p class="subtitle">
+          For NGOs and planners, the value isn't only where to take one patient right now.
+          They need a map of chronic capability gaps: where dialysis, trauma, oncology, or real emergency readiness is missing.
+        </p>
+        <div class="big-list">
+          <div class="solution">
+            <h3>From patient routing to planning intelligence</h3>
+            <p>Trust-scored data is aggregated by PIN code and shows not just facility counts, but the real failures by specialty and readiness.</p>
+          </div>
+          <div class="solution">
+            <h3>Actionable desert map</h3>
+            <p>You can see districts where nominal hospitals exist, but 4-factor trust on critical fronts is systematically low.</p>
+          </div>
+          <div class="problem">
+            <h3>What it looked like before</h3>
+            <p>Planning was built on registries of buildings and beds. But a facility registry isn't a registry of actually working care pathways.</p>
+          </div>
+        </div>
+      </div>
+      <div class="aside">
+        <div class="panel">
+          <h3>Why this matters for the challenge</h3>
+          <ul>
+            <li>Covers the Social Impact and Utility weight.</li>
+            <li>Makes the product useful not only in emergencies, but for policy and planning.</li>
+            <li>Translates technical architecture into clear public impact.</li>
+          </ul>
+        </div>
+        <div class="quote">
+          <p><strong>Core idea:</strong> we're not looking for the nearest hospital. We show <span class="accent">where the healthcare system systematically falls short</span>.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide single" data-title="Closing">
+      <div class="panel">
+        <div class="eyebrow">Closing</div>
+        <h2>The bottom line: the system solves 5 expensive healthcare problems at once</h2>
+        <div class="closing">
+          <div class="card">
+            <h3>1. False availability</h3>
+            <p>Verify-All-4 turns "there's a bed" into "a care path is actually possible".</p>
+          </div>
+          <div class="card">
+            <h3>2. Partial market coverage</h3>
+            <p>Tier 1 / Tier 2 architecture gives immediate coverage without waiting for the country to fully integrate.</p>
+          </div>
+          <div class="card">
+            <h3>3. Coordination collapse after the recommendation</h3>
+            <p>Atomic Booking reserves not a suggestion, but an action.</p>
+          </div>
+          <div class="card">
+            <h3>4. Trust decay over time</h3>
+            <p>Outcome Loop and Agent Reputation create a self-correcting trust layer.</p>
+          </div>
+          <div class="card">
+            <h3>5. Invisible medical deserts</h3>
+            <p>The NGO dashboard shows real capability gaps, not the illusion of coverage from a map of dots.</p>
+          </div>
+        </div>
+        <p class="subtitle" style="margin-top:1.4rem; max-width:58rem;">
+          Best framing for the pitch: <span class="accent">we're not building another healthcare dashboard</span>.
+          We're building trust infrastructure that reduces useless travel, catches false claims, coordinates care, and makes the whole system more honest after every case.
+        </p>
+      </div>
+    </section>
+  </main>
+
+  <div class="footer">
+    <div class="progress" aria-hidden="true">
+      <div class="progress-bar" id="progress-bar"></div>
+    </div>
+    <div class="controls">
+      <span class="key">←</span>
+      <span class="key">→</span>
+      <span>navigate</span>
+    </div>
+    <div class="slide-number" id="slide-number">1 / 10</div>
+  </div>
+
+  <script>
+    const slides = Array.from(document.querySelectorAll('.slide'));
+    const progressBar = document.getElementById('progress-bar');
+    const slideNumber = document.getElementById('slide-number');
+    let index = 0;
+
+    function renderSlides() {
+      const mobile = window.innerWidth <= 1100;
+      slides.forEach((slide, i) => {
+        slide.classList.toggle('active', mobile || i === index);
+      });
+
+      const progress = ((index + 1) / slides.length) * 100;
+      progressBar.style.width = `${progress}%`;
+      slideNumber.textContent = `${index + 1} / ${slides.length}`;
+      document.title = `${slides[index].dataset.title} — Healthcare Multi-Agent Intelligence`;
+    }
+
+    function goTo(next) {
+      index = Math.max(0, Math.min(slides.length - 1, next));
+      renderSlides();
+    }
+
+    window.addEventListener('keydown', (event) => {
+      if (window.innerWidth <= 1100) return;
+      if (event.key === 'ArrowRight' || event.key === 'PageDown' || event.key === ' ') {
+        event.preventDefault();
+        goTo(index + 1);
+      }
+      if (event.key === 'ArrowLeft' || event.key === 'PageUp') {
+        event.preventDefault();
+        goTo(index - 1);
+      }
+      if (event.key === 'Home') {
+        event.preventDefault();
+        goTo(0);
+      }
+      if (event.key === 'End') {
+        event.preventDefault();
+        goTo(slides.length - 1);
+      }
+    });
+
+    window.addEventListener('resize', renderSlides);
+    renderSlides();
+  </script>
+</body>
+</html>
