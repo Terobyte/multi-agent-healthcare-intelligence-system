@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-"""Quick Databricks SQL via CLI. Usage: python3 /tmp/dbq.py "SELECT ..." """
-import json, subprocess, sys
+"""Quick Databricks SQL via CLI. Usage: python3 dbq.py "SELECT ..."
+Override profile/warehouse with env vars: DBX_PROFILE, DBX_WH."""
+import json, os, subprocess, sys
 
-WH = "a6cf21f5e91a2176"
+WH = os.environ.get("DBX_WH", "10fff96dd6d936b5")
+PROFILE = os.environ.get("DBX_PROFILE", "tero2")
 sql = sys.argv[1] if len(sys.argv) > 1 else sys.stdin.read()
 
-payload = json.dumps({"statement": sql, "warehouse_id": WH, "wait_timeout": "30s"})
+payload = json.dumps({"statement": sql, "warehouse_id": WH, "wait_timeout": "50s"})
 r = subprocess.run(
-    ["databricks", "api", "post", "/api/2.0/sql/statements", "--json", payload],
+    ["databricks", "api", "post", "-p", PROFILE, "/api/2.0/sql/statements", "--json", payload],
     capture_output=True, text=True
 )
 try:

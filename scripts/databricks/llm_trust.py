@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
-"""Run Llama 3.3 70B extraction on 262 rich hospitals. Save results to JSON for Delta upload."""
-import json, subprocess, time, sys, concurrent.futures as cf
+"""Run Llama 3.3 70B extraction on 262 rich hospitals. Save results to JSON for Delta upload.
+Env vars: DBX_PROFILE, DBX_WH, DBX_ENDPOINT."""
+import json, os, subprocess, time, sys, concurrent.futures as cf
 
-WH = "a6cf21f5e91a2176"
-ENDPOINT = "databricks-meta-llama-3-3-70b-instruct"
+WH = os.environ.get("DBX_WH", "10fff96dd6d936b5")
+PROFILE = os.environ.get("DBX_PROFILE", "tero2")
+ENDPOINT = os.environ.get("DBX_ENDPOINT", "databricks-meta-llama-3-3-70b-instruct")
 OUT = "/tmp/trust_results.jsonl"
 
 def db_sql(sql):
-    payload = json.dumps({"statement": sql, "warehouse_id": WH, "wait_timeout": "30s"})
-    r = subprocess.run(["databricks","api","post","/api/2.0/sql/statements","--json",payload],
-                       capture_output=True, text=True, timeout=60)
+    payload = json.dumps({"statement": sql, "warehouse_id": WH, "wait_timeout": "50s"})
+    r = subprocess.run(["databricks","api","post","-p",PROFILE,"/api/2.0/sql/statements","--json",payload],
+                       capture_output=True, text=True, timeout=120)
     return json.loads(r.stdout)
 
 def db_llm(prompt, max_tokens=400):
@@ -17,8 +19,8 @@ def db_llm(prompt, max_tokens=400):
         "messages":[{"role":"user","content":prompt}],
         "max_tokens":max_tokens, "temperature":0.1
     })
-    r = subprocess.run(["databricks","api","post",f"/serving-endpoints/{ENDPOINT}/invocations","--json",payload],
-                       capture_output=True, text=True, timeout=60)
+    r = subprocess.run(["databricks","api","post","-p",PROFILE,f"/serving-endpoints/{ENDPOINT}/invocations","--json",payload],
+                       capture_output=True, text=True, timeout=120)
     try:
         d = json.loads(r.stdout)
         if "choices" in d:
