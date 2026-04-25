@@ -1,0 +1,12 @@
+.DS_Store
+node_modules/
+.env
+.env.local
+*.log
+
+# large datasets — keep refs in research/, not raw blobs
+data/raw/
+data/*.csv
+data/*.parquet
+data/*.zip
+!data/.gitkeep
