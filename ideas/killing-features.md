@@ -124,7 +124,7 @@ These are table stakes; without them, the demo can't start.
 
 This is the minimum demo we'd be proud of in front of judges.
 
-- [ ] **Voice Verifier (KILLER A):** stub-call agent that reads a script in Hindi, parses a Yes/No/Number response. Mock-call mode for the demo (recorded handset audio replayed).
+- [ ] **Voice Verifier (KILLER A):** stub-call agent that reads a script in Hindi, parses a Yes/No/Number response. Mock-call mode for the demo (recorded handset audio replayed). **Always visualized on screen** — when voice fires, the UI shows an animated "verifying live" banner, the Predictor confidence band tightens visibly, and the hospital ranking re-orders. The voice is evidence; the screen is the show.
 - [ ] Confidence-triggered verification logic (call only when prediction < 0.7 OR sample > 2h old)
 - [ ] Verifier results feed back as ground truth into Predictor
 - [ ] **Transfer Copilot (KILLER B) core:** doctor-side flow — pick a sending hospital, get 3 receiving recommendations, generate referral packet (PDF + structured FHIR snippet)
@@ -137,16 +137,29 @@ This is the minimum demo we'd be proud of in front of judges.
 
 These are the moonshots. Each one alone is a "holy shit" moment in a demo. None is required for a credible pitch.
 
-- [ ] **LIVE voice call** during the demo — real outbound dial to a stub PBX number, real STT/TTS, real LLM in the middle. (Highest wow. Highest risk.)
-- [ ] **Ambulance auto-dispatch** — fake 108 booking with countdown ("ambulance ETA 14 min")
+> **Demo Theatre Principle (informs all Phase 3 picks):** voice is an *ingredient*, not the *dish*. Databricks judges score what's on screen — Lakehouse, MLflow, Vector Search, Genie, Apps. A demo where the screen is static while audio plays loses to one where MLflow drift panels and Genie SQL update live. Voice fires; the screen reacts. Always.
+>
+> Concretely: **on every second of the demo, something Databricks-native must be moving on screen.**
+
+Reordered by judge-impact for a Databricks-sponsored event (research finding from `research/08-databricks-challenge-priors.md`):
+
+**Tier 1 — Databricks-native theatre (highest score signal)**
+- [ ] **MLflow Model Registry + Lakehouse Monitoring** — Predictor v3 in registry, click "lineage", click "drift dashboard", show actual drift bars updating. ~15-second on-stage moment that 99% of teams skip.
+- [ ] **Genie Space embedded** — chat bar inside our Databricks App; judge types "where do mothers in Bihar go for labour?" → SQL generated live → table renders. NL→SQL theatre.
+- [ ] **Databricks App as the deployment vehicle** — entire UI runs as a Databricks App (not Vercel/Replit), URL is `*.databricksapps.com`. Reads as "native", not "guest".
+
+**Tier 2 — Visualized voice + transfer flows**
+- [ ] **LIVE voice call** during the demo — real outbound dial, real STT/TTS, real LLM. **Must be paired with on-screen confidence band re-tightening and ranking re-ordering**, otherwise it's voice-only and underscores. Highest wow only if visualized; near-zero score if not.
 - [ ] **Bridge Doctor Mode** — live shared screen between sending and receiving doctors, OCR'd handwritten chart, one-tap accept/reject
+- [ ] **Ambulance auto-dispatch** — fake 108 booking with countdown ("ambulance ETA 14 min"), map shows ambulance icon moving
+
+**Tier 3 — Distribution and reach (good story, lower visual punch)**
 - [ ] **SMS / IVR fallback** — actual SMS sent to a Twilio India number during demo, response visible on screen
 - [ ] **ASHA Co-Pilot tablet view** — separate UI showing the same backend used by frontline workers
 - [ ] **Crowdsourced ground-truth signals** — patient we routed yesterday auto-prompts "did you find a bed?" → feeds back into Predictor
-- [ ] **MLflow + Lakehouse Monitoring** showcase — Predictor model in registry, drift dashboard live (Databricks-specific judges' bait)
 - [ ] More vernaculars: Bhojpuri, Marathi, Tamil, Bengali (one extra is enough for the demo)
 
-**Phase 3 picking rule:** at the start of Phase 3, **pick at most 3** crazy items based on (a) what's already half-working, (b) what's lowest-risk-on-demo-day, (c) which gives the biggest "did they really build that?" reaction. The rest go on the roadmap slide.
+**Phase 3 picking rule:** at the start of Phase 3, **pick at most 3** items, with **at least 2 from Tier 1**. Any Tier 2 voice item only counts if its on-screen visualization is built. Pick by (a) what's already half-working, (b) what's lowest-risk-on-demo-day, (c) which gives the biggest "did they really build that?" reaction. Rest go on the roadmap slide.
 
 ---
 
@@ -155,7 +168,8 @@ These are the moonshots. Each one alone is a "holy shit" moment in a demo. None 
 - **Phase 1 ETA?** When can we declare the spine working? Need this date to know how much Phase 3 is actually realistic.
 - **Who owns each phase?** A two-killer build needs at least one person on Predictor/Router and one on Voice/UI by Phase 2. Transfer Copilot is a third track in Phase 2.
 - **Phase 3 wishlist top-3?** Each of us should pick the 3 we'd most love to see live. Compare lists, find overlap, that's the priority.
-- **Databricks-specific signals to bake in early:** vector search over hospital descriptions in Phase 1, MLflow model registry for Predictor in Phase 2, Lakehouse Monitoring on the Predictor's drift in Phase 3. These cost ~nothing extra if we plan for them now and a lot if we retrofit.
+- **Databricks-specific signals to bake in early (per `research/08-databricks-challenge-priors.md`):** Vector Search over hospital descriptions in Phase 1, MLflow Model Registry for Predictor in Phase 2, Lakehouse Monitoring drift panel + Genie Space + Databricks App in Phase 3. Plan now, free; retrofit, expensive.
+- **Demo theatre check:** before adding any Phase 3 item, ask "what visibly changes on screen when this fires?" If the answer is "nothing" or "audio plays", redesign or cut it.
 
 ---
 
