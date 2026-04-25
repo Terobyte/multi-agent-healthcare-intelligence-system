@@ -4,42 +4,50 @@
 
 ## Status snapshot (2026-04-25, last update mid-build)
 
-**Edition:** Databricks Trial for Work, OAuth via `databricks auth login` (profile in `~/.databrickscfg`). Workspace `dbc-e60d2427-6951.cloud.databricks.com`, ID `7474647721046702`. SQL warehouse `a6cf21f5e91a2176` (Serverless Starter, RUNNING).
+**Edition:** Databricks Trial for Work, OAuth via `databricks auth login`.
+**Workspace:** `dbc-17e9d40d-5056.cloud.databricks.com`, ID `7474645268518160`.
+**Profile:** `tero2` (in `~/.databrickscfg`). Old `tero` profile points at expired/lost workspace `7474647721046702` — do not use.
+**SQL warehouse:** `10fff96dd6d936b5` (Serverless Starter Small).
+**Owner:** `jumabayevtemirlan@gmail.com` (Tero's primary Google account).
 
 **Spec:** `docs/superpowers/specs/2026-04-25-healthcare-best-of-merge.md` — best-of merge of Tero/Friend1/Friend2 + Trial-aware corrections. Layer 1-3 = build, Layer 4 = nice-to-have (incl. Mosaic AI Agent Framework wrapper).
 
-**Friend's alternate plan:** `/Users/terobyte/Downloads/implementation_plan.md` (AarogyaNet — Flask + rule-based, no LLM). User has not yet decided "ours / friend's / hybrid", but data layer below works for all three paths.
+**Friend's alternate plan:** `/Users/terobyte/Downloads/implementation_plan.md` (AarogyaNet — Flask + rule-based, no LLM). User leaning hybrid — data layer below works for all three paths.
 
 **Edition audit:** `research/09-databricks-editions.md` — Trial limits, GPU=no, outbound=restricted, Foundation Model APIs work intra-Databricks.
 
-**Friend's data note:** Mubarak/Mian (same person?) cleaned data in his workspace; we loaded VF xlsx into ours, fully self-contained now.
+**Team identities** (from `team.md`, used for git commit attribution):
+- Tero: default committer
+- Danish "Mian": `MianDanish1122@users.noreply.github.com`
+- Mubarak: `Mozzicato@users.noreply.github.com`
+- Arushi: `arushi2610@users.noreply.github.com`
 
-## What is built (in Databricks)
+## What is built (in Databricks workspace.default.*)
 
 ```
-workspace.default.
-├── vf_hackathon_dataset_india_large    Bronze, 10000 rows, 41 cols
+├── vf_hackathon_dataset_india_large    Bronze, 10000 rows × 41 cols
 ├── silver_facilities                    Cleaned + parsed JSON arrays + trust meta, 10000
-├── gold_trust_rules                     Rule-based Trust on ALL 10000
-├── gold_trust_llm                       LLM TrustScorer on 256 rich hospitals (Llama 3.3 70B)
+├── gold_trust_rules                     Rule-based Trust on ALL 10000 + 4 factor proxies
+├── gold_trust_llm                       LLM TrustScorer on 256 hospitals (Llama 3.3 70B)
 ├── gold_trust_final                     HYBRID (LLM where rich + rules elsewhere) — final source
-└── gold_pin_capabilities                NGO Desert Map aggregation, 4964 PINs
+└── gold_pin_capabilities                NGO Desert Map aggregation, 3736 PINs
 ```
 
-Full numbers + decisions: see `docs/databricks-progress.md`.
+Reproducible from scratch via `scripts/databricks/00_bronze_ingest.py` → `01_silver.sql` → `02_gold_rules.sql` → `03_gold_desert.sql` → `04_gold_llm.py` → `05_gold_hybrid.sql`.
 
 ## What works (verified)
 
-- Foundation Model APIs available: Llama 3.3 70B (TESTED), Llama 4 Maverick, Llama 3.1 405B, GPT-5.x family, GPT OSS, Qwen3 80B, Gemma 3 12B, embeddings (BGE/GTE/Qwen3). **NO Claude** intra-Databricks.
+- Foundation Model APIs available: GPT-5.x family, Llama 3.3 70B (TESTED), Llama 4 Maverick, embeddings (BGE/GTE). **NO Claude** intra-Databricks.
 - LLM TrustScorer pipeline: 256/262 successful, 0% parse errors, ~$0.30 cost.
+- LLM artifact preserved at `data/llm_artifacts/trust_results_llama_3_3_70b.jsonl` — survives any workspace loss.
 - SQL queries via `python3 scripts/databricks/dbq.py "SELECT ..."`.
 - Batch LLM via `python3 scripts/databricks/llm_trust.py` (parallelised, 10 workers).
 
-## Demo anchors discovered
+## Demo anchors (current workspace)
 
-- **INHS Sanjivani (Kochi) — Trust 0.90 LLM-verified** (top hospital)
-- **Bihar — 194 PINs zero oncology, 175 zero emergency**
-- **Maharashtra — 1506 facilities but 611 PINs zero oncology** (density ≠ coverage)
+- **INHS Sanjivani (Kochi) — Trust 0.90 LLM-verified** (top hospital, preserved across rebuild)
+- **Bihar — 149 PINs zero oncology, 130 zero emergency**
+- **Maharashtra — 1492 facilities but 403 PINs zero oncology** (density ≠ coverage)
 - **256 LLM-verified vs 9744 rule-inferred** (two-tier badge story)
 
 ## Still TODO (data layer)
@@ -52,16 +60,9 @@ Full numbers + decisions: see `docs/databricks-progress.md`.
 | Agent Reputation view | Aggregation later |
 | Second-model validation pass (Llama 4 Maverick on the 256) | Optional, would replace single-LLM with two-model |
 
-## Open decisions for Tero
-
-1. **Ours / friend's / hybrid?** User leaning hybrid — already implemented at data layer.
-2. **Mubarak status** — was in original 4-person team.md, gone from current best-of-merge (3 people Tero/Mian/Arushi). Confirm with user.
-3. **Vector Search creation** — Trial allows 1 endpoint; needs decision on what to index (facility descriptions + capabilities seems obvious).
-4. **Whether to start writing app code** — user said "не пиши код" earlier, focused on Databricks first. Re-confirm before starting FastAPI/React.
-
 ## Quick resume actions
 
+- `databricks current-user me -p tero2` — confirm OAuth still valid (re-auth via `databricks auth login --host https://dbc-17e9d40d-5056.cloud.databricks.com -p tero2`)
+- `python3 scripts/databricks/dbq.py "SELECT trust_source, COUNT(*) FROM workspace.default.gold_trust_final GROUP BY trust_source"` — verify Hybrid Gold still there (expect 256 + 9744)
 - Read `docs/databricks-progress.md` — full data layer status
 - Read `docs/superpowers/specs/2026-04-25-healthcare-best-of-merge.md` — final spec
-- Check `databricks current-user me` — confirm OAuth still valid
-- `python3 scripts/databricks/dbq.py "SELECT trust_source, COUNT(*) FROM workspace.default.gold_trust_final GROUP BY trust_source"` — verify Hybrid Gold still there

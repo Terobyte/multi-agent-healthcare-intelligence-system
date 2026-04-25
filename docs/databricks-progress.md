@@ -1,6 +1,8 @@
 # Databricks Progress Log
 
-> Live status of data layer work in `dbc-e60d2427-6951.cloud.databricks.com`. Updated as Tero pushes silver/gold/etc.
+> Live status of data layer work.
+> Current workspace: `dbc-17e9d40d-5056.cloud.databricks.com`, ID `7474645268518160`, profile `tero2`, SQL warehouse `10fff96dd6d936b5` (Serverless Starter Small).
+> Old workspace `dbc-e60d2427-6951` / `7474647721046702` lost access on 2026-04-25 — full data layer rebuilt in new workspace via `scripts/databricks/00→05` sequence. Numbers below reflect new state.
 > Auth: OAuth via `databricks auth login` (no PAT needed). Profile lives in `~/.databrickscfg`.
 
 ## ✓ Done
@@ -14,7 +16,7 @@
 | **Claude on Trial?** | ❌ **NOT available** — only OpenAI GPT-5.x + Llama + Qwen + Gemma + GPT-OSS |
 | Vector Search endpoints | ⚠ Empty (need to create one) |
 | Cluster policies | ✅ Personal Compute available |
-| SQL warehouse | ✅ "Serverless Starter" (2X-Small) RUNNING — `a6cf21f5e91a2176` |
+| SQL warehouse | ✅ "Serverless Starter" Small RUNNING — `10fff96dd6d936b5` (current workspace) |
 
 **Spec impact:** F1's two-model verification can use **Llama 3.3 70B (Extractor) + GPT-5.5 (Validator)** OR **Llama 3.3 + Llama 4 Maverick** OR **Llama 3.3 + Qwen3 80B** for model-family independence. Claude path is dead intra-Databricks; would need external Anthropic API for it.
 
@@ -190,13 +192,29 @@ Sample response (from real test):
 | `workspace.default.vf_hackathon_dataset_india_large` | 10,000 | Bronze — raw VF |
 | `workspace.default.silver_facilities` | 10,000 | Silver — cleaned + parsed |
 | `workspace.default.gold_trust_rules` | 10,000 | Gold — rule-based Trust + 4 factor proxies |
-| `workspace.default.gold_pin_capabilities` | 4,964 | Gold — NGO Desert Map aggregation |
+| `workspace.default.gold_pin_capabilities` | 3,736 | Gold — NGO Desert Map aggregation (current build; previous lost workspace had 4964) |
 | `workspace.default.gold_trust_llm` | 256 | Gold — LLM-extracted Trust on rich hospitals |
 | `workspace.default.gold_trust_final` | 10,000 | Gold — **HYBRID** (LLM where available, rules elsewhere) — final source of truth |
 
+## Reproducible rebuild
+
+All six tables can be rebuilt from `data/VF_Hackathon_Dataset_India_Large.xlsx` + `data/llm_artifacts/trust_results_llama_3_3_70b.jsonl` via:
+
+```bash
+DBX_PROFILE=tero2 python3 scripts/databricks/00_bronze_ingest.py
+python3 scripts/databricks/dbq.py "$(cat scripts/databricks/01_silver.sql)"
+python3 scripts/databricks/dbq.py "$(cat scripts/databricks/02_gold_rules.sql)"
+python3 scripts/databricks/dbq.py "$(cat scripts/databricks/03_gold_desert.sql)"
+python3 scripts/databricks/04_gold_llm.py
+python3 scripts/databricks/dbq.py "$(cat scripts/databricks/05_gold_hybrid.sql)"
+```
+
+Total time: ~3 minutes (warehouse cold-start + 5 SQL stmts + JSONL upload).
+
 ## Resources used
 
-- SQL warehouse: `a6cf21f5e91a2176` (Serverless Starter, 2X-Small, RUNNING)
-- Foundation Model APIs called: 1 test (Llama 3.3, 338 tokens)
-- Storage: ~5 MB so far (Bronze 4.7 MB + Silver/Gold deltas)
+- SQL warehouse: `10fff96dd6d936b5` (Serverless Starter Small, RUNNING)
+- Foundation Model APIs called: 256 hospitals × Llama 3.3 70B (138K tokens, ~$0.30) — JSONL preserved in repo
+- UC Volume: `workspace.default.raw` (parquet staging)
+- Storage: ~5 MB (Bronze 4.5 MB parquet + LLM 252 KB JSONL + Delta tables)
 - Cost so far: negligible (well under $1 of the $400 trial credit)
