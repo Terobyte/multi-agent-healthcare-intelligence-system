@@ -1,86 +1,115 @@
 # Tero — твой README
 
-> Главная спека: `../docs/superpowers/specs/2026-04-25-healthcare-multiagent-design.md`
-> Контракты JSON: `../contracts/`
+> Главная спека: `../docs/superpowers/specs/2026-04-25-healthcare-best-of-merge.md`
+> Контракты Pydantic: `../contracts/schemas.py` (ты их и пишешь в MVP 0)
 > Дедлайн: **19 часов** от старта работы (2026-04-25)
-> Команда: Mubarak (Triage), Mian (Predictor+DLT), Arushi (App)
+> Команда: **3 человека** — Tero, Mian (весь backend + DLT + агенты), Arushi (frontend)
 
-## Что ты делаешь (revised после agent review)
+## Что изменилось vs прошлая версия спеки
 
-3 подпапки. **TransferCoordinator передан Mubarak'у** — у тебя был 150% load, агенты review это поймали.
+- **Mubarak больше не в команде.** Mian абсорбировал триаж/intake/dead-zones — у тебя освободились часы.
+- **Voice MCP больше не твой основной компонент.** Web Speech API (браузер, Arushi, 15 минут) = primary voice path. Твой Fish Audio + OpenAI Realtime стек = **Layer 4 stretch only**, по умолчанию НЕ строится.
+- **Stack boundary:** Databricks теперь только data layer. **Никакого** Mosaic AI Agent Framework / Agent Bricks Supervisor / Knowledge Assistant / Databricks Apps SDK. Ты пишешь FastAPI + Databricks Foundation Model APIs (через `mlflow.deployments` client) — модели хостятся в Databricks, но логика агентов это обычный Python.
+- **Genie Code** для RouterAgent → demoted в Layer 4. По умолчанию pandas/SQL ranking.
+- **Главные новые компоненты у тебя:** атомарная 4-way Delta транзакция, Synthetic Live Stream, Outcome Loop, Reputation aggregation, Integration. Это твоё ядро.
 
-| Подпапка | Компонент | Стек | Phase |
+## Что ты теперь делаешь
+
+7 подпапок. Owner интеграции и demo theatre.
+
+| Подпапка | Компонент | Стек | MVP |
 |---|---|---|---|
-| `voice/` | Voice MCP — FastAPI hosted as Databricks App. Hybrid stack: **Fish Audio (TTS, твой готовый engine) + OpenAI gpt-4o-audio (STT) + GPT-4o function calling (LLM)**. Не использует MCP protocol — UC function вызывает HTTP endpoint напрямую. | FastAPI, Fish Audio WS, OpenAI Realtime, Databricks Apps | 1-2 |
-| `supervisor/` | Mosaic AI Supervisor Agent — оркестратор над 4 sub-agents | Python, Agent Bricks, MLflow | 1-2 |
-| `router-config/` | Genie Space configuration над hospitals Delta table | YAML/SQL, Genie Spaces | 1 |
+| `supervisor/` | **BookingAgent** — FastAPI orchestrator + SSE endpoint. Вызывает Triage / TrustScorer / Router / TransferCoord. Через `mlflow.deployments` дёргает Databricks-hosted Llama / Claude. | FastAPI, `mlflow.deployments`, OpenAI function-calling pattern (но через FM API endpoints), SSE | 1-2 |
+| `router/` | **RouterAgent** — pandas/SQL ranking над Gold Delta (`databricks-sql-connector`). Trust × Reputation × travel × cost. Genie Code = Layer 4. | Python, pandas, `databricks-sql-connector` | 1 |
+| `transfer/` | **TransferCoordinator + Atomic Booking** — единая Delta транзакция на 4 INSERT (bed / ambulance / doctor / drug), rollback на любом сбое. Mock 108/ABDM endpoints на портах 9101/9102. **Операционный killer демо.** | Python, Delta ACID, `databricks-sql-connector`, FastAPI mocks | 2 |
+| `sim-stream/` | **Synthetic Live Stream** — Python cron берёт 30 случайных Tier-2 строк, `bed_count += randint(-2, +2)`, append в Delta, broadcast по WebSocket в React. Тик таймится прямо посреди питча. | Python, cron, Delta append, WebSocket | 3 |
+| `outcome-loop/` | **Outcome Loop** — симуляция T+2h ping (без реального Twilio), append в `outcome_feedback` Delta, ретроактивная коррекция Trust через SQL UPDATE. Animation contract для playback'а Аруши. | Python, Delta SQL | 3 |
+| `reputation/` | **Agent Reputation Score** — простая Delta SQL агрегация `honest / total handshakes` per hospital. Pre-rendered React data → Аруша анимирует. | SQL, Python | 3 |
+| `integration/` | **Integration + E2E** — pytest проходит весь путь: voice → 3 cards → Validator demote → Reserve → atomic → outcome ping → reputation tick → NGO. Demo theatre rehearsals. | pytest, demo prep | 3 |
 
-`transfer/` папка остаётся в `tero/` пустой как .gitkeep — реальная работа теперь в `mubarak/transfer/`.
+## Воркфлоу по MVP (три demo-able продукта)
 
-## Порядок работы (19 часов жёстко)
+### MVP 0 — Setup (H 0-2, 2ч)
+- [ ] Databricks **Trial for Work** workspace + perms для всех 3 (region us-east-1 или us-west-2)
+- [ ] **Edition validation gates** в `docs/edition-status.md`:
+  - `mlflow.deployments.get_deploy_client("databricks").list_endpoints()` — должны быть `databricks-meta-llama-3-3-70b-instruct` И `databricks-claude-opus-4-7` (или эквивалент Claude). **Если нет — fallback на ближайший доступный FM endpoint, в крайнем случае внешний API.**
+  - Vector Search storage-optimized index (опционально)
+  - DLT scaffold runs end-to-end
+  - Apps deploy hello-world (только как backup если Vercel сломается)
+- [ ] Скачать `VF_Hackathon_Dataset_India_Large.xlsx` → выписать VF pydantic schema → закоммитить `contracts/schemas.py`
+- [ ] Закоммитить `mocks/*_output.json` для каждого cross-folder контракта (Mian и Arushi строят против них в MVP 1)
+- [ ] **LOCK demo flow в `docs/demo-script.md`** — second-by-second, после этого момента не меняется
+- [ ] FastAPI skeleton в `tero/supervisor/`, hello-world вызов через `mlflow.deployments`
 
-### H 0-1 — провизионинг + spike (1ч)
-- [ ] Databricks workspace + Unity Catalog perms для всех 4
-- [ ] Spike: hello-world Mosaic AI Agent Bricks Supervisor
-- [ ] Spike: Databricks App с appkit (для Arushi на старте)
+### MVP 1 — Working Loop (H 2-7, 5ч) — demo-able #1
+> «Speak Hindi → 3 hospitals → reserve confirms.»
 
-### H 1-5 — Voice MCP (4ч, твой Fish Audio + OpenAI hybrid)
-- [ ] `voice/`: FastAPI + WS endpoint skeleton (deploy таргет = Databricks App, не standalone)
-- [ ] Импортить Fish Audio WS engine из `~/Desktop/Projects/Active/ai_hack/fishaudio/src/` — это **TTS слой**
-- [ ] Pre-generate Hindi prompts в Fish Audio при старте → cache audio: «Kya aapke paas {specialty} ke liye bed khali hai?»
-- [ ] OpenAI gpt-4o-audio для **STT** (заменяет Deepgram per agent review)
-- [ ] OpenAI GPT-4o function calling для **LLM/parse** → структурный output без отдельного парсера
-- [ ] Endpoint `/voice/verify_bed`: вход = `VoiceVerifyInput` → выход = `VoiceOutput` (см. `contracts/schemas.py`)
-- [ ] 3 режима через env `VOICE_MODE`: `mock` (default), `realtime` (live OpenAI), `twilio` (Phase 3)
-- [ ] Контракт-тест: output validates против `VoiceOutput` Pydantic модели
-- [ ] **`voice_output.json` уже в `contracts/`** — Mubarak'a и Arushi уже разблокированы
+- [ ] `tero/supervisor/` — FastAPI `BookingAgent`: `/recommend` POST endpoint, function-call orchestration (Triage → TrustScorer → Router → 3 cards)
+- [ ] `tero/supervisor/sse.py` — **mock SSE** endpoint с canned reasoning tokens (Arushi consumes)
+- [ ] `tero/router/` — pandas/SQL ranking из Gold через `databricks-sql-connector`, top 3 по trust × distance × specialty
+- [ ] `tero/supervisor/reserve.py` — простой POST `/reserve` → `{confirmed: true, eta: 23}` (БЕЗ Delta транзакции, она в MVP 2)
+- [ ] E2E smoke test: `pytest tero/supervisor/test_e2e.py`
 
-### H 5-11 — Supervisor (6ч)
-- [ ] `supervisor/` Python package
-- [ ] Зарегистрировать 4 sub-agents через description metadata (Triage / BedPredictor / Router / TransferCoord / Voice)
-- [ ] Routing logic: intent classifier (patient / doctor) → sub-agent sequence
-- [ ] Confidence-trigger: `min(BedPredictor.confidence) < 0.7 OR sample_age > 2h` → invoke Voice
-- [ ] MLflow tracing on
-- [ ] Aggregator: соединяет JSON outputs в `SupervisorResponse` (см. `contracts/schemas.py`)
-- [ ] Mock layer: читает все 4 mock JSON из `contracts/*_output.json`
-- [ ] Smoke test: end-to-end с mock'ами проходит
+### MVP 2 — Atomic + Real SSE (H 7-13, 6ч) — demo-able #2 (RUBRIC-PASS)
+> «...Validator catches contradiction. Click any score for source. Reserve → 4 tiles commit atomically.»
 
-### H 11-13 — Genie Space + Router config (2ч)
-- [ ] Genie Space над silver hospitals Delta table
-- [ ] 5 example queries: «ICU beds in Pune <30 min», «cardiology hospitals in Maharashtra», etc
-- [ ] Sample SQL для FK hints
+- [ ] `tero/transfer/atomic.py` — `book_atomic(hospital_id, factors_required)`: открывает Delta транзакцию, INSERT в 4 таблицы, ROLLBACK на любом fail
+- [ ] `tero/transfer/mock_endpoints.py` — fake 108/ABDM на портах 9101/9102 с конфигурируемым success/failure (для демо failure-and-retry)
+- [ ] `tero/supervisor/sse_real.py` — **заменить mock SSE на реальный** OpenAI/FM streaming, distinct event types `triage` / `extractor` / `validator` / `router` / `transfer` (Arushi color-codes)
+- [ ] `tero/supervisor/reserve.py` upgrade — вызывает `book_atomic`, возвращает реальный `atomic_txn_id` или `rollback_reason`
+- [ ] **Demo failure-and-retry script:** Reserve A → drug fail (mock сконфигурирован) → 4 tiles красные → auto-suggest B → commit → 4 tiles зелёные
 
-### H 13-16 — Integration prep + demo theatre (3ч)
-- [ ] Pre-record fallback audio для каждого demo момента (страховка из спеки Section 11b)
-- [ ] Demo screenshot capture: MLflow lineage, Lakehouse Monitoring, Genie SQL
-- [ ] Demo script timing rehearsal (см. Section 11a главной спеки — 2 минуты по секундам)
+⚠ **HARD CHECKPOINT @ H 13.** Если MVP 2 не зелёный — **freeze**, полируй MVP 1+2, MVP 3 не стартуем. The One Rule срабатывает здесь.
 
-### H 16-18 — Integration day (2ч)
-- [ ] Заменить mock-вызовы в Supervisor на реальные UC fn / Knowledge Assistant invocations
-- [ ] End-to-end test: Patient flow + Doctor flow (Mubarak пишет E2E)
-- [ ] Demo theatre проверка: на каждой секунде что-то Databricks-нативное движется
+### MVP 3 — Tier-1/2 + Stream + Outcome + Polish (H 13-19, 6ч) — final
+> «...Tier-1 verified live, Tier-2 stream tick, T+2h ping → reputation drops, NGOs use the same map.»
 
-### H 18-19 — Demo rehearsal + slides (1ч)
-- [ ] 3 полных прогона демо
-- [ ] 1 прогон с `VOICE_MODE=mock` (fallback drill — проверить что демо не ломается без OpenAI)
-- [ ] Слайды (Arushi помогает): архитектурная диаграмма + human story
+- [ ] `tero/sim-stream/` — Python cron, 30 случайных Tier-2 строк, `bed_count += randint(-2,+2)`, occasional `icu_full=True`, append в Delta, WebSocket → React. **Таймь тик на момент середины питча.**
+- [ ] `tero/outcome-loop/` — симуляция T+2h ping (БЕЗ реального Twilio), append в `outcome_feedback` Delta, retro-correct Trust через SQL UPDATE
+- [ ] `tero/reputation/` — Delta SQL aggregation `honest / total handshakes`, pre-rendered data → Arushi animation
+- [ ] `tero/supervisor/tier_routing.py` — Tier-1 (HAS-AGENT) → IntakeAgent endpoint; Tier-2 → BedPredictor + Synthetic Stream + voice fallback (Mode B = Layer 4, не строим)
+- [ ] `tero/integration/` — E2E pytest: voice → cards → demote → Reserve → atomic → outcome → reputation → NGO
+- [ ] **Counterfactual opener slide** в `docs/pitch-deck/`: «38 lives changed in 90 days, simulated from research/01»
+- [ ] **3 demo rehearsals** на H 17, H 18, H 19 — fix timing/audio
+- [ ] **Pre-recorded fallback** для каждого «live» момента (см. Section 12 спеки)
 
 ## Что эмитчишь
 
-- `SupervisorResponse` — финальный ответ для Databricks App (см. `contracts/schemas.py`)
-- `VoiceOutput` — voice verifier результат
-- `RouterOutput` — ranked list (Genie запрос завернут)
+- `BookingAgent /recommend` → агрегированный response для React (3 cards + trust + reasoning)
+- `SSE /sse` → `ReasoningPanel.event` (см. Section 7 спеки) — каждый шаг агента стримится
+- `book_atomic` → `TransferCoord.output` — atomic_txn_id + factors_locked + deeplinks (Ola/Uber/108 = secondary buttons)
+- `RouterOutput` → ranked list для cards
+- `outcome_feedback` append → запускает retro-correction
+- `reputation` aggregation → tick анимация
 
-(TransferOutput теперь у Mubarak'a)
+## Что потребляешь (mocks из `contracts/`/`mocks/` в MVP 0-1, реальные после)
 
-## Что потребляешь (mocks из `contracts/`)
+- `triage_output.json` (Mian)
+- `trust_scorer_output.json` (Mian) — теперь с per-field CI + extractor_confidence + validator_contradiction
+- `predictor_output.json` (Mian) — для Tier-2
+- `intake_handshake.json` (Mian) — Tier-1 hospitals (mock signature OK)
+- `dead_zones.json` (Mian) — для NGO tab у Arushi (ты не трогаешь)
 
-- `contracts/triage_output.json` (Mubarak)
-- `contracts/predictor_output.json` (Mian)
-- `contracts/transfer_output.json` (Mubarak)
+## Stack constraints (важно — изменилось)
 
-Когда реальные готовы — Supervisor вызывает их вместо чтения mock JSON.
+- ✅ FastAPI service хостится **вне Databricks** (Render / Fly.io / Railway / ngrok tunnel на демо). Внутри Databricks Apps **не клади** — outbound network restriction может уронить SSE.
+- ✅ Все LLM вызовы через `mlflow.deployments.get_deploy_client("databricks")` — модели Databricks-hosted, **никаких внешних API ключей** в primary path. Это даёт «all inference inside the lakehouse» — governance/compliance pitch line.
+- ✅ Delta операции через `databricks-sql-connector`. Atomic transaction = критический Databricks-native момент, держи его.
+- ❌ **Никакого** Mosaic AI Agent Framework / Agent Bricks Supervisor / Knowledge Assistant / Databricks Apps SDK / Genie Code (Layer 4 only) / Lakehouse Monitoring как live demo (только static screenshot в слайде).
 
-## Demo theatre за тобой
+## Demo theatre — твоё ядро
 
-В каждый момент демо что-то Databricks-нативное должно двигаться на экране. Список проверок — Section 9 главной спеки.
+Section 10 спеки: на каждой секунде live демо что-то agentic должно двигаться + Reasoning Panel должен стримить токены. Иерархия «если только одно работает» (Section 10):
+
+1. **Reasoning Panel streaming** — потеряем = потеряем F2 killer
+2. **Atomic Booking 4-tile flip** — потеряем = потеряем T killer (твой)
+3. **Click-to-source MLflow trace** — Mian'a, но ты wire'ишь
+4. **Synthetic Stream tick** — потеряем = демо теряет «live» feel для Tier 2 (твой)
+5. **Validator demotion visible** — Mian'a контент, ты дёргаешь
+
+## Risks (твои персональные)
+
+- **SSE из FastAPI на Vercel-hosted React работает ТОЛЬКО если FastAPI достижим из браузера юзера** (не за Databricks-only сетью). Хостинг — Render/Fly.io/Railway или ngrok на демо. **High severity.**
+- **Atomic 4-way Delta transaction теряет демо impact без визуализации.** Tile-flip animation должна быть wired до конца MVP 2 (с Arushi).
+- Voice MCP Mode B (Fish + OpenAI Realtime) **дропается** в Layer 4. Не возвращайся к нему пока Layer 1-3 не зелёные.
+- Reasoning Panel сильно зависит от time-to-first-token < 200ms — pre-warm FM endpoints на H 16, держи cached fallback.
