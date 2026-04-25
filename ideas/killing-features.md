@@ -59,6 +59,7 @@ We don't claim live data. We claim **calibrated prediction with confidence bands
 
 ### KILLING FEATURE B — Inter-Facility Transfer Copilot
 
+
 The team's favorite scenario (point #3): doctor at small hospital says *"move them to a tertiary center."* Today the family scrambles. Our agent does it in one screen:
 - ranks 3 receiving hospitals by capability + Predictor's bed estimate + travel time
 - packages records (HL7 / FHIR / OCR'd paper chart)
@@ -102,12 +103,59 @@ Two doctors on a transfer call get a structured shared screen with patient summa
 
 ---
 
+## Build Order (Phased Strategy)
+
+**Strategy:** ship everything, but in phases. Each phase ends in a state that is *itself* demo-ready. If we run out of time, we cut from Phase 3, never from Phase 1 or 2. Crazy ideas land in Phase 3 by design — they're high-risk, high-wow, and we save them for after the foundation is solid.
+
+### Phase 1 — Foundation (the spine has to work before anything fancy)
+
+These are table stakes; without them, the demo can't start.
+
+- [ ] Ingest + clean 10k messy hospital records → Lakehouse / Delta table
+- [ ] Geospatial index (lat/lon, district, state) ready for distance queries
+- [ ] Predictor v1: **history-only baseline** for P(bed | hospital, time). No voice yet.
+- [ ] Router: rank 3 hospitals by P(bed) × travel × specialty match
+- [ ] Patient web UI: input symptom or city → see 3 ranked hospitals on a map
+- [ ] One vernacular: Hindi text in/out (call the rest "Phase 3")
+
+**Phase 1 demo-ready state:** *"Type 'fever, Lucknow' → see 3 hospitals with confidence-banded bed predictions on a map."*
+
+### Phase 2 — The Two Killers Light Up (A and B core working)
+
+This is the minimum demo we'd be proud of in front of judges.
+
+- [ ] **Voice Verifier (KILLER A):** stub-call agent that reads a script in Hindi, parses a Yes/No/Number response. Mock-call mode for the demo (recorded handset audio replayed).
+- [ ] Confidence-triggered verification logic (call only when prediction < 0.7 OR sample > 2h old)
+- [ ] Verifier results feed back as ground truth into Predictor
+- [ ] **Transfer Copilot (KILLER B) core:** doctor-side flow — pick a sending hospital, get 3 receiving recommendations, generate referral packet (PDF + structured FHIR snippet)
+- [ ] Cost-Truth card on every recommendation (medical + non-medical estimate)
+- [ ] WhatsApp-style chat front-end for vernacular triage (folds into A's UI)
+
+**Phase 2 demo-ready state:** *"Mother types symptom in Hindi → Router shows 3 hospitals with cost truth → judge clicks 'verify availability' → mock voice call plays → confidence updates live. Then: switch to doctor view, click 'refer this patient' → 3 receiving hospitals + referral packet generated."*
+
+### Phase 3 — Crazy Wow (only after Phase 2 works)
+
+These are the moonshots. Each one alone is a "holy shit" moment in a demo. None is required for a credible pitch.
+
+- [ ] **LIVE voice call** during the demo — real outbound dial to a stub PBX number, real STT/TTS, real LLM in the middle. (Highest wow. Highest risk.)
+- [ ] **Ambulance auto-dispatch** — fake 108 booking with countdown ("ambulance ETA 14 min")
+- [ ] **Bridge Doctor Mode** — live shared screen between sending and receiving doctors, OCR'd handwritten chart, one-tap accept/reject
+- [ ] **SMS / IVR fallback** — actual SMS sent to a Twilio India number during demo, response visible on screen
+- [ ] **ASHA Co-Pilot tablet view** — separate UI showing the same backend used by frontline workers
+- [ ] **Crowdsourced ground-truth signals** — patient we routed yesterday auto-prompts "did you find a bed?" → feeds back into Predictor
+- [ ] **MLflow + Lakehouse Monitoring** showcase — Predictor model in registry, drift dashboard live (Databricks-specific judges' bait)
+- [ ] More vernaculars: Bhojpuri, Marathi, Tamil, Bengali (one extra is enough for the demo)
+
+**Phase 3 picking rule:** at the start of Phase 3, **pick at most 3** crazy items based on (a) what's already half-working, (b) what's lowest-risk-on-demo-day, (c) which gives the biggest "did they really build that?" reaction. The rest go on the roadmap slide.
+
+---
+
 ## Discussion Prompts
 
-- **Demo path:** A only? A + B? B only? (A is denser; B is more emotional)
-- **Pitch headline:** lead with A ("Voice-Verified Prediction") or B ("Transfer Copilot")?
-- **What's missing?** especially anything Databricks-specific — geospatial scale, Lakehouse Monitoring, MLflow registry for the Predictor, vector search over hospital descriptions
-- **Fake vs real voice agent for demo?** real voice call to a stub PBX number is more impressive than a recording — but riskier on demo day
+- **Phase 1 ETA?** When can we declare the spine working? Need this date to know how much Phase 3 is actually realistic.
+- **Who owns each phase?** A two-killer build needs at least one person on Predictor/Router and one on Voice/UI by Phase 2. Transfer Copilot is a third track in Phase 2.
+- **Phase 3 wishlist top-3?** Each of us should pick the 3 we'd most love to see live. Compare lists, find overlap, that's the priority.
+- **Databricks-specific signals to bake in early:** vector search over hospital descriptions in Phase 1, MLflow model registry for Predictor in Phase 2, Lakehouse Monitoring on the Predictor's drift in Phase 3. These cost ~nothing extra if we plan for them now and a lot if we retrofit.
 
 ---
 
