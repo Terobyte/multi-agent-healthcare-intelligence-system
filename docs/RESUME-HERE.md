@@ -27,13 +27,20 @@
 ```
 ├── vf_hackathon_dataset_india_large    Bronze, 10000 rows × 41 cols
 ├── silver_facilities                    Cleaned + parsed JSON arrays + trust meta, 10000
-├── gold_trust_rules                     Rule-based Trust on ALL 10000 + 4 factor proxies
-├── gold_trust_llm                       LLM TrustScorer on 256 hospitals (Llama 3.3 70B)
-├── gold_trust_final                     HYBRID (LLM where rich + rules elsewhere) — final source
-└── gold_pin_capabilities                NGO Desert Map aggregation, 3736 PINs
+├── silver_facilities_text               Single doc_text col for embedding, 10000 (PK + CDF)
+├── silver_facilities_text_idx           Vector Search Delta-sync index (BGE-large) — provisioning
+├── gold_trust_rules                     Rule-based Trust + 4 factor proxies, 10000
+├── gold_pin_capabilities                NGO Desert Map per PIN, 3736
+├── gold_trust_llm                       Llama 3.3 70B Extractor scores, 256
+├── gold_trust_llm_v2                    Llama 4 Maverick Validator scores, 255
+├── gold_trust_two_model                 Joined v1+v2 with agreement metrics, 262
+├── gold_trust_final                     HYBRID 4-tier badge (two-model / disagree / single / rule)
+├── txn_atomic + 4 resource tables       Atomic Booking saga (bed/ambulance/doctor/drug)
+├── outcome_feedback                     Append-only patient ping ledger
+└── v_committed_bookings, v_agent_reputation, v_trust_calibrated  views
 ```
 
-Reproducible from scratch via `scripts/databricks/00_bronze_ingest.py` → `01_silver.sql` → `02_gold_rules.sql` → `03_gold_desert.sql` → `04_gold_llm.py` → `05_gold_hybrid.sql`.
+Reproducible via `scripts/databricks/00_bronze_ingest.py` → `01_silver.sql` → `02_gold_rules.sql` → `03_gold_desert.sql` → `04_gold_llm.py` → `04b_gold_llm_v2.py` → `05_gold_hybrid.sql` → `07_atomic_booking.sql` → `08_outcome_feedback.sql` → `09_demo_seed.sql` → `10_two_model_verify.sql` → `06_vector_search.py`.
 
 ## What works (verified)
 
@@ -45,10 +52,12 @@ Reproducible from scratch via `scripts/databricks/00_bronze_ingest.py` → `01_s
 
 ## Demo anchors (current workspace)
 
-- **INHS Sanjivani (Kochi) — Trust 0.90 LLM-verified** (top hospital, preserved across rebuild)
+- **INHS Sanjivani (Kochi) — Trust 0.888, two-model-verified** (Llama 3.3 + Llama 4 Maverick agreed within 0.10 across 4 factors)
+- **80 hospitals two-model-verified** / 169 models-disagree / 13 single-model / 9738 rule-inferred — 4-tier trust badge story
+- **6 outcome pings on INHS Sanjivani** → reputation 1.0 → calibrated trust holds (working outcome learning loop demo)
 - **Bihar — 149 PINs zero oncology, 130 zero emergency**
 - **Maharashtra — 1492 facilities but 403 PINs zero oncology** (density ≠ coverage)
-- **256 LLM-verified vs 9744 rule-inferred** (two-tier badge story)
+- **5 atomic bookings + 1 saga rollback** demo (txn_999 ambulance unavailable → all 4 resources released)
 
 ## Still TODO (data layer)
 

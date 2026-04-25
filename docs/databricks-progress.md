@@ -193,23 +193,55 @@ Sample response (from real test):
 | `workspace.default.silver_facilities` | 10,000 | Silver — cleaned + parsed |
 | `workspace.default.gold_trust_rules` | 10,000 | Gold — rule-based Trust + 4 factor proxies |
 | `workspace.default.gold_pin_capabilities` | 3,736 | Gold — NGO Desert Map aggregation (current build; previous lost workspace had 4964) |
-| `workspace.default.gold_trust_llm` | 256 | Gold — LLM-extracted Trust on rich hospitals |
-| `workspace.default.gold_trust_final` | 10,000 | Gold — **HYBRID** (LLM where available, rules elsewhere) — final source of truth |
+| `workspace.default.gold_trust_llm` | 256 | Gold — LLM-extracted Trust on rich hospitals (Llama 3.3 70B) |
+| `workspace.default.gold_trust_llm_v2` | 255 | Gold — second-model LLM scoring (Llama 4 Maverick, Validator role) |
+| `workspace.default.gold_trust_two_model` | 262 | Gold — joined v1+v2 with agreement metrics (max_factor_disagreement, verification_status) |
+| `workspace.default.gold_trust_final` | 10,000 | Gold — **HYBRID** with 4-tier badge: two-model-verified (80) / models-disagree (169) / llm-verified (13) / rule-inferred (9738) |
+| `workspace.default.txn_atomic` | 6 (seed) | Atomic booking ledger (saga-commit pattern) |
+| `workspace.default.bed_reservations` | 6 (seed) | Per-bed Delta table |
+| `workspace.default.ambulance_dispatches` | 5 (seed) | Per-vehicle Delta table |
+| `workspace.default.doctor_slots` | 5 (seed) | Per-slot Delta table |
+| `workspace.default.drug_reservations` | 5 (seed) | Per-drug Delta table |
+| `workspace.default.outcome_feedback` | 14 (seed) | Append-only patient ping ledger |
+| `workspace.default.silver_facilities_text` | 10,000 | Concatenated text per facility for vector embedding |
+| `workspace.default.silver_facilities_text_idx` | provisioning | Vector Search Delta-sync index (BGE-large) |
+
+**Views:**
+- `v_committed_bookings` — only COMMITTED transactions visible (rolled-back filtered)
+- `v_agent_reputation` — per-hospital reputation_score from outcomes
+- `v_trust_calibrated` — gold_trust_final adjusted by reputation when n_outcomes ≥ 5
 
 ## Reproducible rebuild
 
-All six tables can be rebuilt from `data/VF_Hackathon_Dataset_India_Large.xlsx` + `data/llm_artifacts/trust_results_llama_3_3_70b.jsonl` via:
+All tables rebuilt from `data/VF_Hackathon_Dataset_India_Large.xlsx` + `data/llm_artifacts/*.jsonl` via:
 
 ```bash
+# core data layer
 DBX_PROFILE=tero2 python3 scripts/databricks/00_bronze_ingest.py
-python3 scripts/databricks/dbq.py "$(cat scripts/databricks/01_silver.sql)"
-python3 scripts/databricks/dbq.py "$(cat scripts/databricks/02_gold_rules.sql)"
-python3 scripts/databricks/dbq.py "$(cat scripts/databricks/03_gold_desert.sql)"
+python3 scripts/databricks/run_sql_file.py scripts/databricks/01_silver.sql
+python3 scripts/databricks/run_sql_file.py scripts/databricks/02_gold_rules.sql
+python3 scripts/databricks/run_sql_file.py scripts/databricks/03_gold_desert.sql
 python3 scripts/databricks/04_gold_llm.py
-python3 scripts/databricks/dbq.py "$(cat scripts/databricks/05_gold_hybrid.sql)"
+python3 scripts/databricks/04b_gold_llm_v2.py
+python3 scripts/databricks/run_sql_file.py scripts/databricks/05_gold_hybrid.sql
+python3 scripts/databricks/run_sql_file.py scripts/databricks/10_two_model_verify.sql
+# atomic booking + outcome
+python3 scripts/databricks/run_sql_file.py scripts/databricks/07_atomic_booking.sql
+python3 scripts/databricks/run_sql_file.py scripts/databricks/08_outcome_feedback.sql
+python3 scripts/databricks/run_sql_file.py scripts/databricks/09_demo_seed.sql
+# vector search (10-30 min initial sync)
+python3 scripts/databricks/06_vector_search.py
 ```
 
-Total time: ~3 minutes (warehouse cold-start + 5 SQL stmts + JSONL upload).
+Total time: ~5-10 minutes for tables + 10-30 min for VS index initial sync.
+
+## Demo flow assets ready
+
+- **Two-model verified tier (80 hospitals)** — query: `SELECT name, city, state, trust_score FROM gold_trust_final WHERE trust_source='two-model-verified' ORDER BY trust_score DESC LIMIT 10`
+- **Models-disagree tier (169 hospitals)** — examples where Llama 3.3 + Llama 4 Maverick differ by >0.20 on at least one factor → flagged as low-confidence in UI
+- **NGO Desert headlines** — Bihar 149 PINs zero oncology, Maharashtra 1492 facilities/403 zero oncology
+- **Atomic booking demo** — `SELECT * FROM v_committed_bookings ORDER BY transaction_id` shows 5 successful 4-way bookings; `SELECT * FROM txn_atomic WHERE status='ROLLED_BACK'` shows the 1 saga rollback (ambulance unavailable)
+- **Outcome learning loop** — `SELECT * FROM v_trust_calibrated WHERE total_outcomes > 0` shows INHS Sanjivani Kochi at 6 outcomes, reputation 1.0, trust holds 0.888 (two-model-verified)
 
 ## Resources used
 
