@@ -8,6 +8,8 @@ Research date: 2026-04-25. Hackathon target: "Agentic Healthcare Maps" (Challeng
 2. Databricks' own April-2026 healthcare reference "AiChemy" hard-codes the exact pattern we should mirror — a **supervisor agent over domain skills** (literature, chem, evidence) connected via **MCP** and governed by **Agent Bricks** ([InfoWorld, 2026-04-06](https://www.infoworld.com/article/4154467/databricks-launches-aichemy-multi-agent-ai-for-drug-discovery.html)); on the patient side, the published `Patient Personalization Reference Architecture` literally says "**Mosaic AI–based agentic systems help pair the patient with the correct provider**" — i.e. our exact problem ([ref-arch](https://www.databricks.com/resources/architectures/healthcare-patient-personalization-reference-architecture)).
 3. Past Databricks GenAI hackathon winners almost never bring novel data — they win on **Databricks-native plumbing** as theatre: medallion + Vector Search + MLflow eval + Databricks App UI (Exyte ReguBEAM, AITHENA, Care Cost Compass all follow this template) ([World Cup winners](https://www.databricks.com/blog/announcing-winners-generative-ai-world-cup), [Care Cost Compass](https://www.databricks.com/blog/care-cost-compass-agent-system-using-mosaic-ai-agent-framework)).
 
+> **★ INSIGHT (judging rubric)** — Our research moats (CAG audit numbers, transfer mortality data, 8kHz voice tuning) are slide-content, not judging-points. Judges score what's on screen: medallion → Vector Search → MLflow → Genie → Apps. **The pitch sells the human story; the demo sells the lakehouse.** Both have to be loud.
+
 ## Past Challenges & Sponsorships
 
 | Date | Name | Scope | Sponsor track | Winners / notes |
@@ -44,6 +46,8 @@ No public page surfaces a literal "Agentic Healthcare Maps" brief. If our Challe
 - AiChemy (Apr 6 2026): supervisor + skills + MCP for OpenTargets/PubMed/PubChem. Direct template for our setup — replace those skills with bed-availability, triage, transfer-coordination.
 - Genie Code (Mar 11 2026): Databricks is itself shipping autonomous agents that "monitor Lakeflow pipelines and AI models to triage failures." Judges will recognise the pattern; mirror it in our ops story.
 
+> **★ INSIGHT (concrete agent map)** — Mirror AiChemy 1:1 with healthcare names: `TriageAgent` (Knowledge Assistant, symptom→specialty), `BedPredictor` (UC function over MLflow forecaster), `RouterAgent` (Genie Space over hospitals Delta), `TransferCoordinator` (UC function wrapping mock 108/ABDM as MCP). Judges (4 Databricks ICs) recognise this in 10 seconds.
+
 ## Databricks reference architectures we should leverage
 
 | Primitive | What it does | Why it matters for our build | Doc |
@@ -72,6 +76,8 @@ The Care Cost Compass write-up and the Mosaic AI 2025 keynote both lean hard on 
 Patterns we've seen reward this. (a) Native Apps deployment beats Vercel/Streamlit-external because hosting *inside* the lakehouse is the marketing pillar Databricks is pushing in 2026 ([Apps + Lakebase](https://www.databricks.com/blog/how-build-production-ready-data-and-ai-apps-databricks-apps-and-lakebase), [appkit SDK](https://github.com/databricks/appkit)). (b) A judge typing "Show me ICUs with ventilator capacity in Maharashtra" into a Genie box and watching SQL render is the single highest-leverage wow moment in Databricks demos right now — it's literally what Genie Code (Mar 2026) is selling. The map UI sits next to it; click a hospital and the supervisor agent narrates the routing decision with MLflow trace IDs visible.
 
 Avoid: voice-only demos (108 audio stack is impressive but consumes too much demo time vs. the lakehouse-native signals judges actually score).
+
+> **★ INSIGHT (demo theatre rule)** — Voice fires; the screen reacts. When the verifier calls a hospital, the predictor's confidence band must visibly tighten and the ranked hospital list must re-order — *on screen*. Audio without on-screen change is wasted demo seconds. This is the single most important demo-day discipline for our build.
 
 ## Sources
 
