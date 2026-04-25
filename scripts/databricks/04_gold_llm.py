@@ -38,14 +38,16 @@ with open(SRC) as f:
         if "_error" in r["result"]:
             continue
         res = r["result"]
+        # clamp probability fields to [0,1] — defends against LLM returning 1.5/-0.2 etc.
+        clip = lambda v: max(0.0, min(1.0, float(v)))
         rows.append({
             "facility_id":   str(r["facility_id"]),
             "name":          r["name"],
-            "p_bed":         float(res.get("p_bed", 0)),
-            "p_oxygen":      float(res.get("p_oxygen", 0)),
-            "p_drug":        float(res.get("p_drug", 0)),
-            "p_specialist":  float(res.get("p_specialist", 0)),
-            "ci":            float(res.get("ci", 0)),
+            "p_bed":         clip(res.get("p_bed", 0)),
+            "p_oxygen":      clip(res.get("p_oxygen", 0)),
+            "p_drug":        clip(res.get("p_drug", 0)),
+            "p_specialist":  clip(res.get("p_specialist", 0)),
+            "ci":            clip(res.get("ci", 0)),
             "reasoning":     res.get("reasoning", ""),
             "tokens":        int(r.get("tokens", 0)),
             "model_endpoint": MODEL,

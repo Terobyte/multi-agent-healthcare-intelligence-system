@@ -54,11 +54,43 @@ SELECT
          ) <= 0.20 THEN 'two-model-verified'
     ELSE 'models-disagree'
   END AS verification_status,
-  -- blended per-factor scores (avg when both present, fallback to whichever exists)
-  COALESCE((v1.p_bed        + v2.p_bed)        / 2.0, v1.p_bed,        v2.p_bed)        AS p_bed_blended,
-  COALESCE((v1.p_oxygen     + v2.p_oxygen)     / 2.0, v1.p_oxygen,     v2.p_oxygen)     AS p_oxygen_blended,
-  COALESCE((v1.p_drug       + v2.p_drug)       / 2.0, v1.p_drug,       v2.p_drug)       AS p_drug_blended,
-  COALESCE((v1.p_specialist + v2.p_specialist) / 2.0, v1.p_specialist, v2.p_specialist) AS p_specialist_blended
+  -- conservative blended scores:
+  -- if both models agree (max factor delta ≤ 0.20) → average them (signal smoothing)
+  -- if models disagree → use MIN (conservative — never inflate trust on disagreement)
+  -- if only one present → use whichever
+  CASE
+    WHEN v1.p_bed IS NOT NULL AND v2.p_bed IS NOT NULL AND
+         GREATEST(ABS(v1.p_bed-v2.p_bed),ABS(v1.p_oxygen-v2.p_oxygen),ABS(v1.p_drug-v2.p_drug),ABS(v1.p_specialist-v2.p_specialist)) <= 0.20
+      THEN (v1.p_bed + v2.p_bed) / 2.0
+    WHEN v1.p_bed IS NOT NULL AND v2.p_bed IS NOT NULL THEN LEAST(v1.p_bed, v2.p_bed)
+    ELSE COALESCE(v1.p_bed, v2.p_bed)
+  END AS p_bed_blended,
+  CASE
+    WHEN v1.p_oxygen IS NOT NULL AND v2.p_oxygen IS NOT NULL AND
+         GREATEST(ABS(v1.p_bed-v2.p_bed),ABS(v1.p_oxygen-v2.p_oxygen),ABS(v1.p_drug-v2.p_drug),ABS(v1.p_specialist-v2.p_specialist)) <= 0.20
+      THEN (v1.p_oxygen + v2.p_oxygen) / 2.0
+    WHEN v1.p_oxygen IS NOT NULL AND v2.p_oxygen IS NOT NULL THEN LEAST(v1.p_oxygen, v2.p_oxygen)
+    ELSE COALESCE(v1.p_oxygen, v2.p_oxygen)
+  END AS p_oxygen_blended,
+  CASE
+    WHEN v1.p_drug IS NOT NULL AND v2.p_drug IS NOT NULL AND
+         GREATEST(ABS(v1.p_bed-v2.p_bed),ABS(v1.p_oxygen-v2.p_oxygen),ABS(v1.p_drug-v2.p_drug),ABS(v1.p_specialist-v2.p_specialist)) <= 0.20
+      THEN (v1.p_drug + v2.p_drug) / 2.0
+    WHEN v1.p_drug IS NOT NULL AND v2.p_drug IS NOT NULL THEN LEAST(v1.p_drug, v2.p_drug)
+    ELSE COALESCE(v1.p_drug, v2.p_drug)
+  END AS p_drug_blended,
+  CASE
+    WHEN v1.p_specialist IS NOT NULL AND v2.p_specialist IS NOT NULL AND
+         GREATEST(ABS(v1.p_bed-v2.p_bed),ABS(v1.p_oxygen-v2.p_oxygen),ABS(v1.p_drug-v2.p_drug),ABS(v1.p_specialist-v2.p_specialist)) <= 0.20
+      THEN (v1.p_specialist + v2.p_specialist) / 2.0
+    WHEN v1.p_specialist IS NOT NULL AND v2.p_specialist IS NOT NULL THEN LEAST(v1.p_specialist, v2.p_specialist)
+    ELSE COALESCE(v1.p_specialist, v2.p_specialist)
+  END AS p_specialist_blended,
+  -- carry forward token usage / confidence so downstream UI can show "verified by 2 models, X tokens spent"
+  v1.tokens AS v1_tokens,
+  v2.tokens AS v2_tokens,
+  v1.model_endpoint AS v1_model,
+  v2.model_endpoint AS v2_model
 FROM workspace.default.gold_trust_llm v1
 FULL OUTER JOIN workspace.default.gold_trust_llm_v2 v2
   ON v1.facility_id = v2.facility_id;
@@ -89,6 +121,14 @@ SELECT
   t.avg_factor_disagreement,
   t.v1_reasoning AS llama_3_3_reasoning,
   t.v2_reasoning AS llama_4_reasoning,
+  -- llm metadata (carried forward to gold_trust_final so downstream consumers can read it)
+  COALESCE(t.v1_tokens, 0) + COALESCE(t.v2_tokens, 0) AS llm_tokens,
+  CASE
+    WHEN t.v1_model IS NOT NULL AND t.v2_model IS NOT NULL THEN concat(t.v1_model, '+', t.v2_model)
+    ELSE COALESCE(t.v1_model, t.v2_model)
+  END AS model_endpoint,
+  -- llm_confidence: Llama 3.3 ci field if present, else Maverick's
+  COALESCE(t.v1_ci, t.v2_ci) AS llm_confidence,
   r.num_doctors, r.capacity, r.lat, r.lon,
   r.specialties, r.procedures, r.equipment, r.capabilities,
   r.completeness_score, r.consistency_score, r.digital_credibility_score, r.freshness_score

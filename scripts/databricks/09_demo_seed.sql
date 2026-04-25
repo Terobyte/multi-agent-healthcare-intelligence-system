@@ -1,14 +1,23 @@
--- demo seed: 5 atomic bookings + 1 ROLLED_BACK + 14 outcome pings
+-- demo seed: 5 atomic bookings + 1 ROLLED_BACK + 20 outcome pings
+--
+-- !!! DEMO-ONLY: uses INSERT OVERWRITE which wipes any existing booking/outcome rows. !!!
+-- !!! Run only at the start of a demo dry-run, never against production data.         !!!
+--
 -- bookings target real LLM-verified high-trust hospitals from gold_trust_llm so the
--- "trust badge → booking → outcome → calibrated trust" story has a continuous thread
--- in the demo. INHS Sanjivani (top hospital, trust 0.90) gets 6 outcomes so its
--- v_trust_calibrated row demonstrates the reputation-cap rule firing (n_outcomes ≥ 5).
+-- "trust badge → booking → outcome → calibrated trust" story has a continuous thread.
+--
+-- two demo arcs:
+--   A. INHS Sanjivani (5603): 6 positive outcomes → reputation 1.0 → trust holds at 0.888
+--      "the system confirms the LLM was right"
+--   B. Aradhna Super Speciality (959): 6 outcomes mostly negative → reputation ~0.33
+--      → calibrated_trust caps from 0.831 down to ~0.43
+--      "the system catches an over-optimistic LLM and self-corrects from outcomes"
 --
 -- facility map:
 --   5603 = INHS Sanjivani, Kochi (trust 0.90, top LLM-verified)
 --   2672 = Delhi Liver Transplant (trust 0.875)
 --   186  = Aadit Eye Hospital, Ahmedabad (trust 0.837)
---   959  = Aradhna Super Speciality + Trauma Centre, Shamli UP (trust 0.825)
+--   959  = Aradhna Super Speciality + Trauma Centre, Shamli UP (trust 0.825) — calibration arc
 --   881  = Apex Eye Care, Cuttack (trust 0.825)
 --   8888 = synthetic FAILED facility for the rollback story
 
@@ -50,19 +59,29 @@ INSERT OVERWRITE workspace.default.drug_reservations VALUES
   ('drug_004','txn_004','959','N02BE01','Paracetamol IV', 1.0, 'g', 'pat_up_001', 'RESERVED', current_timestamp(), current_timestamp()),
   ('drug_005','txn_005','881','S01ED01','Timolol', 0.25, 'percent', 'pat_od_001', 'DISPENSED', current_timestamp(), current_timestamp());
 
--- 14 outcomes — INHS Sanjivani (5603) gets 6 (triggers calibration), others get 1-2 each
+-- 20 outcomes:
+--   arc A — INHS Sanjivani (5603) gets 6 positive → reputation 1.0 → trust holds (cap doesn't fire because reputation ≥ trust)
+--   arc B — Aradhna (959) gets 6 outcomes mostly negative → reputation ~0.33 → trust caps DOWN from 0.831 to ~0.43 (visible calibration!)
+--   plus 2 each for 2672, 186, 881 (below 5-outcome threshold, shown as "n=2 — not enough data" in UI)
 INSERT OVERWRITE workspace.default.outcome_feedback VALUES
+  -- arc A: INHS Sanjivani — system confirms LLM was right
   ('fb_001','txn_001','pat_kl_001','5603','bed',         1.0, 0.95, 'sms',        'admitted to ICU on arrival, no wait', current_timestamp()),
   ('fb_002','txn_001','pat_kl_001','5603','oxygen',      1.0, 0.95, 'sms',        'oxygen pipeline working', current_timestamp()),
   ('fb_003','txn_001','pat_kl_001','5603','specialist',  1.0, 0.90, 'voice',      'cardiologist on duty as expected', current_timestamp()),
   ('fb_004','txn_001','pat_kl_001','5603','drug',        1.0, 0.90, 'sms',        'cardiac drugs available', current_timestamp()),
   ('fb_005',NULL,     'pat_kl_002','5603','bed',         1.0, 0.95, 'ngo_visit',  'NGO confirmed bed availability week prior', current_timestamp()),
   ('fb_006',NULL,     'pat_kl_003','5603','specialist',  1.0, 0.90, 'ngo_visit',  'cardiologist confirmed in roster', current_timestamp()),
-  ('fb_007','txn_002','pat_dl_001','2672','bed',         1.0, 0.90, 'sms',        'liver suite ready as scheduled', current_timestamp()),
-  ('fb_008','txn_002','pat_dl_001','2672','specialist',  1.0, 0.90, 'voice',      'hepatologist visit completed', current_timestamp()),
-  ('fb_009','txn_003','pat_gj_001','186', 'specialist',  1.0, 0.85, 'sms',        'ophthalmologist available', current_timestamp()),
-  ('fb_010','txn_003','pat_gj_001','186', 'drug',        1.0, 0.85, 'sms',        'eye drops dispensed', current_timestamp()),
-  ('fb_011','txn_004','pat_up_001','959', 'bed',         0.5, 0.80, 'voice',      'shifted from ICU to general after 2h, conditions stabilised', current_timestamp()),
-  ('fb_012','txn_004','pat_up_001','959', 'specialist',  0.5, 0.85, 'nurse_note', 'emergency physician available but covering 2 wards', current_timestamp()),
-  ('fb_013','txn_005','pat_od_001','881', 'specialist',  1.0, 0.85, 'sms',        'ophthalmologist seen on time', current_timestamp()),
-  ('fb_014','txn_005','pat_od_001','881', 'drug',        0.0, 0.80, 'ngo_visit',  'eye drops out of stock, redirected to nearby pharmacy', current_timestamp());
+  -- arc B: Aradhna — outcomes contradict optimistic LLM, calibration caps trust DOWN
+  ('fb_007','txn_004','pat_up_001','959', 'bed',         0.0, 0.80, 'voice',      'no ICU bed, shifted to nearby facility', current_timestamp()),
+  ('fb_008','txn_004','pat_up_001','959', 'oxygen',      0.5, 0.75, 'nurse_note', 'portable cylinder only, no pipeline', current_timestamp()),
+  ('fb_009','txn_004','pat_up_001','959', 'specialist',  0.0, 0.85, 'voice',      'emergency physician on leave, junior doctor only', current_timestamp()),
+  ('fb_010','txn_004','pat_up_001','959', 'drug',        0.5, 0.80, 'sms',        'paracetamol available, IV route was missing', current_timestamp()),
+  ('fb_011',NULL,     'pat_up_002','959', 'bed',         0.0, 0.80, 'ngo_visit',  'NGO inspection found 0/8 ICU beds available, all occupied', current_timestamp()),
+  ('fb_012',NULL,     'pat_up_003','959', 'specialist',  0.0, 0.85, 'ngo_visit',  'NGO follow-up: trauma surgeon position vacant 2 months', current_timestamp()),
+  -- 2 outcomes each for 2672, 186, 881 (below threshold, demonstrates "n_outcomes < 5 → use llm trust as-is")
+  ('fb_013','txn_002','pat_dl_001','2672','bed',         1.0, 0.90, 'sms',        'liver suite ready as scheduled', current_timestamp()),
+  ('fb_014','txn_002','pat_dl_001','2672','specialist',  1.0, 0.90, 'voice',      'hepatologist visit completed', current_timestamp()),
+  ('fb_015','txn_003','pat_gj_001','186', 'specialist',  1.0, 0.85, 'sms',        'ophthalmologist available', current_timestamp()),
+  ('fb_016','txn_003','pat_gj_001','186', 'drug',        1.0, 0.85, 'sms',        'eye drops dispensed', current_timestamp()),
+  ('fb_017','txn_005','pat_od_001','881', 'specialist',  1.0, 0.85, 'sms',        'ophthalmologist seen on time', current_timestamp()),
+  ('fb_018','txn_005','pat_od_001','881', 'drug',        0.0, 0.80, 'ngo_visit',  'eye drops out of stock, redirected to nearby pharmacy', current_timestamp());

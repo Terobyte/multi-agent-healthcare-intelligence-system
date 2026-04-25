@@ -50,18 +50,28 @@ Score 4 factors (0-1) with brief reasoning. Return ONLY valid JSON, nothing else
 {{"p_bed": 0.0-1.0, "p_oxygen": 0.0-1.0, "p_drug": 0.0-1.0, "p_specialist": 0.0-1.0, "ci": 0.0-0.3, "reasoning": "<one sentence per factor>"}}"""
 
 def parse_response(text):
-    """Extract JSON from LLM response, handling markdown wrapping."""
-    text = text.strip()
-    # strip ```json ... ``` wrappers
-    if text.startswith("```"):
-        text = text.split("```")[1]
-        if text.startswith("json"): text = text[4:]
-    # find { ... }
+    """Extract JSON from LLM response, handling markdown wrapping. Never raises."""
     try:
+        text = (text or "").strip()
+        # strip ```json ... ``` or ``` ... ``` wrappers (handles single backtick edge case too)
+        if text.startswith("```"):
+            parts = text.split("```")
+            if len(parts) >= 2:
+                text = parts[1]
+            if text.startswith("json"):
+                text = text[4:]
+            text = text.strip()
+        if "{" not in text or "}" not in text:
+            return {"_error": "no JSON braces in response", "_raw": text[:300]}
         start = text.index("{"); end = text.rindex("}") + 1
-        return json.loads(text[start:end])
+        parsed = json.loads(text[start:end])
+        # clamp probability fields to [0, 1] — defensive against LLM returning 1.5 / -0.2 / etc.
+        for k in ("p_bed", "p_oxygen", "p_drug", "p_specialist", "ci"):
+            if k in parsed and isinstance(parsed[k], (int, float)):
+                parsed[k] = max(0.0, min(1.0, float(parsed[k])))
+        return parsed
     except Exception as e:
-        return {"_error": str(e), "_raw": text[:300]}
+        return {"_error": str(e), "_raw": text[:300] if isinstance(text, str) else str(text)[:300]}
 
 def process(row):
     fid = row[0]
