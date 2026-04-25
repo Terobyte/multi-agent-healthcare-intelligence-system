@@ -10,3 +10,13 @@ data/*.csv
 data/*.parquet
 data/*.zip
 !data/.gitkeep
+
+# private team profiles — never commit
+team.md
+team/
+
+# owner work folders — ignored until we pick a direction (each member proposes; we converge)
+tero/
+mian/
+mubarak/
+arushi/
