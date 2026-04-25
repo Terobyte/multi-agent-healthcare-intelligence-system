@@ -6,7 +6,9 @@ import json, os, subprocess, time, sys, concurrent.futures as cf
 WH = os.environ.get("DBX_WH", "10fff96dd6d936b5")
 PROFILE = os.environ.get("DBX_PROFILE", "tero2")
 ENDPOINT = os.environ.get("DBX_ENDPOINT", "databricks-meta-llama-3-3-70b-instruct")
-OUT = "/tmp/trust_results.jsonl"
+# output filename derived from endpoint so two-model runs don't overwrite each other
+_safe_endpoint = ENDPOINT.replace("databricks-", "").replace("meta-", "").replace(".","_").replace("-","_")
+OUT = os.environ.get("DBX_OUT", f"/tmp/trust_results_{_safe_endpoint}.jsonl")
 
 def db_sql(sql):
     payload = json.dumps({"statement": sql, "warehouse_id": WH, "wait_timeout": "50s"})
