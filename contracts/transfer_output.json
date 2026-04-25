@@ -1,0 +1,30 @@
+{
+  "receiving_hospitals": [
+    {
+      "hospital_id": "h_4412",
+      "name": "AIIMS Lucknow",
+      "capability_score": 0.95,
+      "travel_min": 18,
+      "p_bed": 0.91
+    },
+    {
+      "hospital_id": "h_3421",
+      "name": "King George Medical University",
+      "capability_score": 0.88,
+      "travel_min": 24,
+      "p_bed": 0.72
+    },
+    {
+      "hospital_id": "h_8821",
+      "name": "Sahara Hospital",
+      "capability_score": 0.81,
+      "travel_min": 32,
+      "p_bed": 0.55
+    }
+  ],
+  "referral_packet_url": "https://mock.databricksapps.com/packets/ref_456.pdf",
+  "fhir_snippet": "{\"resourceType\":\"ReferralRequest\",\"status\":\"active\",\"intent\":\"order\"}",
+  "ambulance_eta_min": 14,
+  "d2d_handoff_id": "d2d_mock_001",
+  "trace_id": "tr_transfer_mock_001"
+}

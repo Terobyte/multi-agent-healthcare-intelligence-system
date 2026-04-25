@@ -1,0 +1,36 @@
+{
+  "ranked": [
+    {
+      "hospital_id": "h_4412",
+      "name": "AIIMS Lucknow",
+      "travel_min": 18,
+      "specialty_match": 0.91,
+      "cost_estimate_inr": 12000,
+      "non_medical_cost_inr": 4500,
+      "lat": 26.85,
+      "lon": 80.95
+    },
+    {
+      "hospital_id": "h_3421",
+      "name": "King George Medical University",
+      "travel_min": 24,
+      "specialty_match": 0.88,
+      "cost_estimate_inr": 9500,
+      "non_medical_cost_inr": 5200,
+      "lat": 26.86,
+      "lon": 80.93
+    },
+    {
+      "hospital_id": "h_8821",
+      "name": "Sahara Hospital",
+      "travel_min": 32,
+      "specialty_match": 0.74,
+      "cost_estimate_inr": 18000,
+      "non_medical_cost_inr": 3800,
+      "lat": 26.84,
+      "lon": 81.02
+    }
+  ],
+  "genie_query_id": "gq_mock_001",
+  "trace_id": "tr_router_mock_001"
+}

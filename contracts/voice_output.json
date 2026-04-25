@@ -1,0 +1,11 @@
+{
+  "hospital_id": "h_3421",
+  "original_p_bed": 0.55,
+  "verified_p_bed": 0.95,
+  "confidence_after_voice": 0.97,
+  "verified_at": "2026-04-25T14:23:11Z",
+  "raw_transcript": "Haan, do bed khali hain",
+  "audio_url": "https://mock.databricksapps.com/calls/call_789.wav",
+  "mode_used": "mock",
+  "trace_id": "tr_voice_mock_001"
+}

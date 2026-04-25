@@ -1,0 +1,7 @@
+{
+  "specialty": "respiratory medicine",
+  "urgency": 3,
+  "symptoms_parsed": ["fever", "cough", "chest pain"],
+  "confidence": 0.84,
+  "trace_id": "tr_triage_mock_001"
+}

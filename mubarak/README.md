@@ -5,11 +5,16 @@
 > Deadline: **19 hours total** from work start (2026-04-25)
 > Connections: Mian (Predictor) consumes your specialty output; Tero (Supervisor) calls you
 
-## What you own
+## What you own (revised after agent review — load rebalanced)
 
 | Subfolder | Component | Stack | Phase |
 |---|---|---|---|
 | `triage/` | TriageAgent — Mosaic AI Knowledge Assistant over symptom→specialty corpus | Python, Knowledge Assistant, Vector Search | 1→2 |
+| `transfer/` | **TransferCoordinator (reassigned from Tero)** — UC function + mock 108/ABDM HTTP + FHIR snippet generator + D2D handoff | Python, UC functions, FHIR | 2 |
+
+You also own **integration tests** (E2E) — when Tero swaps mock JSONs in Supervisor with real sub-agent calls (H 16-18), you write the end-to-end test that validates patient flow + doctor flow against the real backend.
+
+Why redistribution: review found Tero at 150% load, you at 40%. FHIR snippet + structured packet generation matches your `Mozzicato/AI-TAX-REFORM` profile (structured output from RAG pipeline).
 
 ## What you build
 
@@ -45,23 +50,27 @@
 - [ ] Confidence calibration — flag low-confidence outputs
 - [ ] Smoke test against 20 real-ish patient inputs
 
-### H 11+ — Help others
-- [ ] Pair with Mian on Hindi corpus content
-- [ ] Help Tero debug Supervisor → TriageAgent integration
+### H 11-15 — Phase 2: TransferCoordinator (4h)
+- [ ] Create `transfer/` Python package
+- [ ] UC function wrapper: input `TransferInput` → output `TransferOutput` (see `contracts/schemas.py`)
+- [ ] Mock 108 ambulance dispatch endpoint (FastAPI, returns `ambulance_eta_min` countdown)
+- [ ] Mock ABDM record packaging: generate FHIR JSON snippet (use `fhir.resources` Python lib or hand-write)
+- [ ] PDF referral packet generator (use `reportlab` or simple HTML→PDF)
+- [ ] D2D handoff form generator (returns `d2d_handoff_id`)
+- [ ] Smoke test: `pytest tests/transfer_smoke.py` — output validates against `TransferOutput` Pydantic model
 
-## Output JSON contract
+### H 15-18 — Integration tests (your second responsibility)
+- [ ] Write E2E test in `tests/e2e_patient_flow.py`: full patient flow against real Supervisor + real sub-agents
+- [ ] Write E2E test in `tests/e2e_doctor_flow.py`: full doctor flow with TransferCoordinator
+- [ ] Help Tero swap mock JSONs in Supervisor with real UC fn calls
+- [ ] Pair with Mian on MLflow checkin (your first MLflow exposure)
 
-See `../contracts/triage_output.py` (Pydantic) and `../contracts/triage_output.json` (mock).
+## Output JSON contracts
 
-```json
-{
-  "specialty": "cardiology",
-  "urgency": 3,
-  "symptoms_parsed": ["chest pain", "shortness of breath"],
-  "confidence": 0.84,
-  "trace_id": "tr_abc123"
-}
-```
+You emit two output schemas. Both defined in `../contracts/schemas.py`:
+
+- `TriageOutput` — symptom→specialty result. Mock: `../contracts/triage_output.json`
+- `TransferOutput` — receiving hospitals + FHIR + ambulance ETA. Mock: `../contracts/transfer_output.json`
 
 ## Input you receive (from Supervisor)
 

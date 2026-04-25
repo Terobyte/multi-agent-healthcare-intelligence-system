@@ -146,44 +146,32 @@ A multi-agent healthcare intelligence system that turns 10,000 messy Indian hosp
 
 ### 3.5 TransferCoordinator (sub-agent)
 
-- **Stack:** UC function + MCP server for 108/ABDM mock
-- **Owner:** Tero
-- **Folder:** `agents/transfer/`
+- **Stack:** UC function + mock 108/ABDM HTTP endpoints (no MCP layer needed — UC fn calls FastAPI mock directly)
+- **Owner:** **Mubarak** (reassigned from Tero based on review findings — Mubarak's RAG/AI-TAX-REFORM background fits FHIR snippet generation + structured packet assembly)
+- **Folder:** `mubarak/transfer/` (added to Mubarak's track)
 - **Wraps:**
   - Mock 108 ambulance dispatch endpoint (returns ETA countdown)
   - Mock ABDM record packaging (returns FHIR snippet + PDF URL)
   - D2D handoff form generator
-- **Input:** sending_hospital_id + patient_summary + receiving_hospitals
-- **Output:**
-  ```json
-  {
-    "receiving_hospitals": [...],
-    "referral_packet_url": "https://.../ref_123.pdf",
-    "fhir_snippet": "{...}",
-    "ambulance_eta_min": 14,
-    "d2d_handoff_id": "d2d_456"
-  }
-  ```
+- **Input/Output:** see `contracts/schemas.py` (`TransferInput` / `TransferOutput`)
 
-### 3.6 Voice MCP Server
+### 3.6 Voice MCP Server (Hybrid Stack)
 
-- **Stack:** Standalone Python (FastAPI), Fish Audio WebSocket + Deepgram STT + Hindi prompt scripts. Wrapped as MCP server, registered in Mosaic AI as managed MCP connector.
-- **Owner:** Tero (lead) + Mian (Hindi/Urdu prompt content) + Mubarak (orchestration logic)
-- **Folder:** `voice/` (separate repo or subdirectory)
-- **Trigger conditions** (set by Supervisor): `confidence < 0.7 OR last_sample_age > 2h OR patient_in_transit == true`
-- **15-second call** in vernacular, single yes/no/number question
-- **Demo theatre rule:** voice fires; the screen reacts — confidence band must visibly tighten and ranking must re-order
-- **Input:** hospital_id + question_template
-- **Output:**
-  ```json
-  {
-    "hospital_id": "h_3421",
-    "verified_p_bed": 0.95,
-    "verified_at": "2026-04-25T14:23:11Z",
-    "raw_transcript": "Haan, do bed khali hain",
-    "audio_url": "https://.../call_789.wav"
-  }
-  ```
+- **Stack (revised after agent review):** FastAPI + WebSocket hosted as a **Databricks App** (Databricks Apps support FastAPI + WS — no external hosting needed).
+  - **TTS:** Fish Audio WebSocket (Tero's existing engine in `~/Desktop/Projects/Active/ai_hack/fishaudio/`) — Hindi prompts pre-generated and cached at startup
+  - **STT:** OpenAI `gpt-4o-audio` (replaces Deepgram per agent review — better on noisy phone audio, native Hindi)
+  - **LLM + structured output:** OpenAI `gpt-4o` with function calling (parses transcript → `verified_p_bed` directly, no separate parser)
+  - **Optional Phase 3:** Twilio Media Streams for real outbound phone call
+- **Integration with Supervisor:** UC function calls Voice MCP HTTP endpoint directly (no MCP protocol — agent review flagged this as unverified for custom Python servers)
+- **Owner:** Tero (TTS layer + FastAPI shell from existing engines), with Mubarak reviewing Hindi prompt content
+- **Folder:** `tero/voice/`
+- **Modes** (env var `VOICE_MODE`):
+  - `mock` (default for demo) — pre-recorded audio + hardcoded JSON, never fails
+  - `realtime` — live OpenAI loop, microphone in browser → Voice MCP → audio response
+  - `twilio` (Phase 3 stretch) — real outbound phone call via Twilio
+- **Trigger conditions** (set by Supervisor): `min(BedPredictor.confidence) < 0.7 OR last_sample_age > 2h OR patient_in_transit == true`
+- **Demo theatre rule:** voice fires → on-screen `verifying` banner → confidence band tightens → ranking re-orders. Audio without on-screen change = wasted demo seconds.
+- **Input/Output:** see `contracts/schemas.py` (`VoiceVerifyInput` / `VoiceOutput`). New fields after review: `original_p_bed`, `confidence_after_voice`, `mode_used`.
 
 ### 3.7 Databricks App (UI)
 
@@ -290,44 +278,77 @@ VoiceMCP.output     →  { hospital_id, verified_p_bed, verified_at, raw_transcr
 
 ---
 
-## 7. Team Mapping
+## 7. Team Mapping (revised after agent review — load-balanced)
 
 | Person | Owns | Project Folder | Stack | Risk |
 |---|---|---|---|---|
-| **Tero** (lead) | Supervisor + TransferCoordinator + Voice MCP + RouterAgent (Genie config) + integration + demo theatre + pitch coordination | `agents/supervisor/`, `agents/transfer/`, `agents/router/`, `voice/` | Python, MCP, Mosaic AI Agent Bricks, Fish Audio, Genie | High — owns 3 components + integration |
-| **Mubarak** (senior) | TriageAgent (Knowledge Assistant) | `agents/triage/` | Python, Mosaic AI Knowledge Assistant, Vector Search | Medium — Databricks ramp-up needed |
-| **Mian / Danish** (junior ML) | BedPredictor + DLT ingest pipeline (bronze/silver/gold) | `agents/predictor/`, `data/dlt/` | Python, MLflow Models-from-Code, sklearn, Lakeflow/DLT | Medium — pair with Tero on first MLflow checkin |
-| **Arushi** (UI) | Databricks App (React) — Patient flow + Doctor copilot | `app/` | React + appkit SDK + Leaflet + Mapbox | Low — strong React shipping; just learning appkit |
+| **Tero** | Supervisor + Voice MCP + RouterAgent (Genie config) + integration + demo theatre + pitch coordination | `tero/supervisor/`, `tero/voice/`, `tero/router-config/` | Python, Mosaic AI Agent Bricks, Fish Audio, OpenAI Realtime, Genie | High — orchestrator + voice + integration |
+| **Mubarak** (senior) | TriageAgent + **TransferCoordinator** (reassigned from Tero) + integration tests | `mubarak/triage/`, `mubarak/transfer/` | Python, Knowledge Assistant, Vector Search, UC functions, FHIR | Medium — Databricks ramp-up; load now balanced |
+| **Mian / Danish** | BedPredictor + DLT pipeline + **stub gold table FIRST** to unblock everyone | `mian/predictor/`, `mian/dlt-pipeline/` | Python, MLflow Models-from-Code, sklearn, Lakeflow/DLT | Medium — critical path: stub-first unblocks team |
+| **Arushi** | Databricks App (React) — Patient flow + Doctor copilot | `arushi/app/` | React + appkit SDK + Leaflet/Mapbox | Low — strong React shipping; just learning appkit |
 
-`Alert agent` (notifications/SMS) → folded into Databricks App as toast-level UI; not a separate sub-agent. Phase 3 stretch can wire real Twilio.
+**Key redistribution from review findings:**
+- `TransferCoordinator` moved Tero → Mubarak (review flagged Tero at 150% load, Mubarak at 40%; FHIR + structured packet generation matches Mubarak's RAG profile)
+- **Stub gold table comes FIRST** in Mian's track (review flagged DLT as serial bottleneck — Mian commits 50-row hardcoded gold table within first hour, full DLT runs in parallel afterwards)
+- `Alert agent` (notifications/SMS) → folded into Databricks App as toast-level UI; not a separate sub-agent. Phase 3 stretch can wire real Twilio.
 
 ---
 
-## 8. Build Order (Phased, mirrors `ideas/killing-features.md`)
+## 8. Build Order — 19-Hour Schedule (revised after agent review)
 
-### Phase 1 — Foundation (parallel, each person works in isolation)
+### H 0-1 — Provisioning + spikes (everyone)
+- [ ] [Tero] Databricks workspace + UC perms for all 4 owners
+- [ ] [Mian] **STUB gold table:** 50 hardcoded hospitals committed to Delta within first hour. **Unblocks Mubarak's Vector Search, Tero's Genie Space, Mubarak's Triage corpus indexing.**
+- [ ] [Tero] hello-world Mosaic AI Supervisor spike
+- [ ] [Mubarak] hello-world Knowledge Assistant spike
+- [ ] [Arushi] appkit SDK hello-world Databricks App spike
+- [ ] [Tero] commit `contracts/schemas.py` + all `*_output.json` mocks → unblocks parallel work
 
-- [ ] [Mian] DLT pipeline: 10k records → bronze → silver (geocoded, deduped) → gold
-- [ ] [Mubarak] TriageAgent skeleton: Knowledge Assistant indexed over 5-10 sample symptom docs
-- [ ] [Mian] BedPredictor v1 history-only baseline → MLflow Registry
-- [ ] [Tero] Supervisor skeleton: hardcoded request → calls all 3 sub-agents → returns JSON
-- [ ] [Arushi] Databricks App: input box + 3 hospital cards rendering mock data
-- [ ] [Tero] Genie Space configured over silver hospitals table + 5 example queries seeded
-- [ ] [Tero] Vector Search index built over hospital description corpus
+### H 1-7 — Phase 1: Foundation (parallel, no one blocked)
+- [ ] [Mian] DLT pipeline real: bronze → silver → gold (replaces stub)
+- [ ] [Mian] BedPredictor v1 history-only baseline → MLflow Models-from-Code → UC function
+- [ ] [Mubarak] TriageAgent skeleton: Knowledge Assistant indexed over 5-10 symptom docs
+- [ ] [Tero] Supervisor skeleton: reads mock JSONs from `contracts/`, returns aggregated `SupervisorResponse`
+- [ ] [Tero] Voice MCP shell: FastAPI + WS + Fish Audio TTS pre-cached + mock mode
+- [ ] [Tero] Genie Space configured over silver hospitals table + 5 example queries
+- [ ] [Arushi] Patient flow page: input + map + 3 hospital cards from mock SupervisorResponse
 
-**Phase 1 demo state:** *"Type 'fever, Lucknow' → see 3 hospitals with confidence-banded bed predictions on a map, all running on Databricks Apps."*
+**H 7 Phase 1 demo state:** *"Type 'fever, Lucknow' → 3 hospitals on map with bed predictions, all on Databricks Apps URL."*
 
-### Phase 2 — Two Killers Light Up
-
-- [ ] [Tero] Voice MCP: Fish Audio WS + Hindi prompt + STT/TTS, wrapped as MCP server
-- [ ] [Tero] Confidence-trigger logic in Supervisor: confidence<0.7 OR sample>2h fires Voice
-- [ ] [Tero] TransferCoordinator UC function + 108 MCP mock + FHIR snippet generator
-- [ ] [Arushi] Patient flow with animated "verifying live" banner + confidence band tightening
-- [ ] [Arushi] Doctor copilot screen for Killer B
+### H 7-13 — Phase 2: Two Killers Light Up
+- [ ] [Tero] Voice MCP realtime mode: OpenAI gpt-4o-audio (STT) + GPT-4o function calling (LLM/parse) + Fish Audio (TTS) wired
+- [ ] [Tero] Confidence-trigger logic in Supervisor (`min(confidence) < 0.7 OR sample > 2h` → invoke Voice MCP)
+- [ ] [Mubarak] TransferCoordinator: UC function + mock 108 endpoint + FHIR snippet generator
+- [ ] [Arushi] Patient flow Voice theatre: `verifying` banner + confidence band tightening animation
+- [ ] [Arushi] Doctor copilot page: sending hospital → 3 receivers + packet preview + ambulance ETA countdown
 - [ ] [Mubarak] TriageAgent expanded: full corpus, urgency scoring, Hindi vocab
-- [ ] [Mian] BedPredictor v2: feeds back Voice MCP verified samples as ground truth
+- [ ] [Mian] BedPredictor v2: ingest Voice MCP feedback as ground truth
 
-**Phase 2 demo state:** Two killing features fully working with live demo theatre.
+**H 13 Phase 2 demo state:** Two killing features fully working.
+
+### H 13-16 — Phase 3 (pick 2 Tier-1 + 1 Tier-2)
+**Tier 1 (Databricks-native theatre — pick at least 2):**
+- [ ] [Mian] MLflow Model Registry + Lakehouse Monitoring drift panel ready to click on stage
+- [ ] [Tero/Arushi] Genie Space embedded in App — judge types "ICUs in Pune <30 min" live → SQL renders
+- [ ] [Tero] Databricks App URL is `*.databricksapps.com` (sponsorship signal)
+
+**Tier 2 (pick 1 max):**
+- [ ] [Tero] LIVE OpenAI Realtime voice loop during demo (microphone in browser, not phone)
+- [ ] [Mubarak] Bridge Doctor Mode (D2D shared screen with structured handoff)
+- [ ] [Arushi] Ambulance ETA countdown with map icon animation
+
+### H 16-18 — Integration + contract tests (everyone)
+- [ ] Each owner runs `pytest contracts/test_my_output.py` — output matches Pydantic schema
+- [ ] [Tero] swap mock JSONs in Supervisor → real sub-agent calls
+- [ ] End-to-end test: Patient flow + Doctor flow against real backend
+- [ ] [Mubarak] writes E2E integration test (his second responsibility)
+- [ ] Demo theatre check: every second of demo something Databricks-native moves
+
+### H 18-19 — Demo rehearsal + slides
+- [ ] 3 full demo runs against real backend
+- [ ] 1 demo run with Voice MCP forced to mock (fallback drill)
+- [ ] [Arushi] submission package: README, demo video, Devpost writeup, GitHub polish
+- [ ] Slide deck architecture diagram
 
 ### Phase 3 — Crazy Wow (pick 3, at least 2 from Tier 1)
 
@@ -365,17 +386,54 @@ For each killer firing, this checklist must be satisfied:
 
 ---
 
-## 10. Risks & Open Questions
+## 10. Risks & Open Questions (revised after agent review)
 
 | Risk | Severity | Mitigation |
 |---|---|---|
-| Mubarak no Databricks/MLflow evidence | Medium | Pair with Mian on first MLflow checkin Phase 1 |
-| Voice MCP wrapping protocol not verified for custom Python servers | High | Tero spike day -1: confirm MCP server registration in Mosaic AI |
-| All 4 need Databricks workspace + UC perms | High | Tero owns provisioning hour 0; verify access before kickoff |
-| appkit SDK is new (2025-2026) — docs may be thin | Medium | Arushi spike day -1: build hello-world Databricks App with appkit |
-| 10k records source format unknown | High | Mian + Tero spike day -1: load sample, sniff schema, draft DLT bronze |
-| Demo deadline unclear at design time | High | Tero confirms hackathon date with team before phase 1 starts |
-| Hindi prompt quality for Voice MCP | Medium | Mian/Danish drafts Hindi/Urdu prompts; Mubarak review |
+| Mubarak no Databricks/MLflow evidence — now with bigger load (Triage + Transfer) | Medium | Pair with Mian on first MLflow checkin H 1-3; FHIR snippet generation simpler than full ABDM |
+| ~~MCP protocol unverified~~ Voice MCP not actually MCP — it's UC fn → FastAPI HTTP | Resolved | Voice MCP exposes plain HTTP; UC function calls it directly. No MCP protocol layer needed. |
+| Live OpenAI Realtime fails at demo (network, API outage) | High | `VOICE_MODE=mock` default + pre-recorded audio fallback in Voice MCP — never breaks demo |
+| All 4 need Databricks workspace + UC perms | High | Tero provisions H 0; verify before everyone starts |
+| appkit SDK is new — docs may be thin | Medium | Arushi H 0-1 spike — build hello-world before any real work |
+| 10k records source format unknown — Mian's DLT depends on it | High | Mian H 0-1 sniff sample; **stub gold table H 1 unblocks team regardless** |
+| Hindi prompt quality | Medium | Mubarak drafts Hindi corpus + reviews Voice prompts; Mian/Danish (Urdu native) cross-check |
+| DLT pipeline serial bottleneck | High | **Resolved** by stub-first strategy: Mian commits 50-row hardcoded gold within H 1 → others unblocked |
+| Tero overloaded (review found 150% load) | Medium | TransferCoordinator moved to Mubarak; Tero now ~110% (still high but manageable) |
+| Integration day = first E2E test, 4-6h not realistic | High | **Contract tests in each folder from H 1** (`pytest contracts/test_my_output.py`) — validates JSON shape against Pydantic schema continuously, not just on integration day |
+
+---
+
+## 11a. Demo Script (second-by-second, 2 min)
+
+**00:00-00:15** — Setup shot. Slide 1: "55M Indians pushed into poverty annually. 70% of population, 30% of beds." Architecture diagram visible (mirrors AiChemy, 4 sub-agents under Supervisor).
+
+**00:15-00:35** — Patient flow opens in Databricks App (`*.databricksapps.com` URL visible in browser). Type «बुखार, लखनऊ» (fever, Lucknow). 3 hospitals render on map with confidence bands. **MLflow trace IDs visible in dev panel (left).**
+
+**00:35-00:55** — One hospital shows confidence < 0.7. **Voice MCP fires.** Banner appears: "Verifying availability live...". TTS audio plays (Fish Audio, Hindi: «Kya bed khali hai?»). 5 seconds of mock-recorded response. Confidence band tightens visibly. Hospital ranking re-orders. **Vector Search top-k panel updates simultaneously.**
+
+**00:55-01:15** — Switch to Doctor copilot view. Select "St. John's Hospital" as sending. 3 receiving hospitals appear with capability scores. Click "Generate referral" → FHIR snippet renders + PDF preview + ambulance ETA countdown ticking down. **Map shows ambulance icon moving.**
+
+**01:15-01:35** — Click Genie Space embedded chat. Judge prompt: "Show me ICUs with ventilator capacity in Maharashtra under 30 minutes". SQL renders live. Table populates. **Lakehouse Monitoring drift panel visible in second tab.**
+
+**01:35-01:55** — Architecture recap slide. 4 sub-agents named (Triage, BedPredictor, Router, TransferCoordinator) each labeled with their Databricks primitive (Knowledge Assistant, UC fn + MLflow, Genie Space, UC fn). Supervisor at top. MLflow + Vector Search + DLT visible underneath.
+
+**01:55-02:00** — One-line close: "Voice predicts. Lakehouse remembers. Supervisor decides. All Databricks-native."
+
+---
+
+## 11b. Fallback Strategy
+
+If anything fails on demo day, here's the swap order:
+
+| Failure | Swap to | Setup before demo |
+|---|---|---|
+| Voice MCP realtime API unavailable | `VOICE_MODE=mock` (env var flip) — pre-recorded Hindi audio + hardcoded JSON | Pre-record audio H 16-18 |
+| Genie Space query times out | Pre-recorded screen capture + slide overlay "captured live, week ago" | Record H 16-18 |
+| Databricks App deploy down | Backup deploy on Vercel (hn5-kit base still works) — URL change but flow identical | Keep Vercel deploy alive H 16-18 |
+| Supervisor crashes mid-demo | Mock SupervisorResponse JSON file → frontend reads from local instead | Have file on disk H 16-18 |
+| MLflow lineage panel slow | Static screenshot in slide instead of live click | Take screenshot H 16-18 |
+
+**Rule:** every "live" demo moment must have a pre-recorded version that's been tested. No moment is "either live or nothing."
 
 ---
 

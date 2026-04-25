@@ -1,0 +1,24 @@
+{
+  "predictions": [
+    {
+      "hospital_id": "h_3421",
+      "p_bed": 0.72,
+      "confidence": 0.65,
+      "last_sample_age_min": 145
+    },
+    {
+      "hospital_id": "h_8821",
+      "p_bed": 0.55,
+      "confidence": 0.78,
+      "last_sample_age_min": 30
+    },
+    {
+      "hospital_id": "h_4412",
+      "p_bed": 0.91,
+      "confidence": 0.82,
+      "last_sample_age_min": 60
+    }
+  ],
+  "model_version": "v1",
+  "trace_id": "tr_predictor_mock_001"
+}
