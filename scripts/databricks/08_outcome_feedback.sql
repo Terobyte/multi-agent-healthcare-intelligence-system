@@ -58,11 +58,14 @@ FROM per_facility
 GROUP BY facility_id;
 
 -- v_trust_calibrated: gold_trust_final adjusted by reputation when n_outcomes ≥ 5
+-- after 10_two_model_verify.sql, gold_trust_final has llama_3_3_reasoning + llama_4_reasoning
+-- + max_factor_disagreement instead of single reasoning column
 CREATE OR REPLACE VIEW workspace.default.v_trust_calibrated AS
 SELECT
   g.facility_id, g.name, g.city, g.state, g.facility_type,
   g.trust_score                                AS trust_raw,
-  g.trust_source,
+  g.trust_source,                                  -- two-model-verified | models-disagree | llm-verified | rule-inferred
+  g.max_factor_disagreement,
   r.reputation_score,
   r.total_outcomes,
   CASE
@@ -71,7 +74,8 @@ SELECT
   END                                           AS trust_calibrated,
   r.avg_llm_calibration_error,
   g.p_bed, g.p_oxygen, g.p_drug, g.p_specialist,
-  g.reasoning, g.lat, g.lon
+  g.llama_3_3_reasoning, g.llama_4_reasoning,
+  g.lat, g.lon
 FROM workspace.default.gold_trust_final g
 LEFT JOIN workspace.default.v_agent_reputation r
   ON g.facility_id = r.facility_id;
