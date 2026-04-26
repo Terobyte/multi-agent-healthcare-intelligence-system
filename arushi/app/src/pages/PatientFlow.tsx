@@ -231,7 +231,11 @@ export default function PatientFlow() {
             ))}
           </div>
         </div>
-        <div className="space-y-4">
+        {/* Sticky on xl+ — follows the user as they scroll the long hospital
+            list. self-start prevents the grid item from stretching to match
+            the left column; max-h + overflow-y-auto keep the panel from ever
+            exceeding the viewport so it doesn't block scrolling. */}
+        <div className="space-y-4 xl:sticky xl:top-4 xl:self-start xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto xl:pr-1">
           <HospitalMap hospitals={hospitals} />
           <AtomicBookingTiles state={bookingState} />
           <ReasoningPanel rows={rows} loading={isLoading} />
