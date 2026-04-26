@@ -64,7 +64,6 @@ export default function HospitalMap({ hospitals }: { hospitals: Hospital[] }) {
         scrollWheelZoom={false}
         className="h-full w-full"
         style={{ minHeight: 260 }}
-        zoomControl={false}
         attributionControl={false}
       >
         <TileLayer
