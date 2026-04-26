@@ -15,6 +15,10 @@ const agentById: Record<string, RenderedReasoningRow["agent"]> = {
   verify_1: "Verification Agent",
 };
 
+// Module-level (survives unmount/remount across tab switches in App.tsx, where
+// AnimatePresence + key={activeTab} unmounts the page). useRef would reset.
+let _autoQuerySent = false;
+
 export default function PatientFlow() {
   const [hospitals, setHospitals] = useState<Hospital[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -71,8 +75,8 @@ export default function PatientFlow() {
       });
     } catch {
       if (!isMountedRef.current) return;
-      setHospitals([]);
-      setRows([]);
+      // Keep last known hospitals/rows visible — wiping them on a transient
+      // failure is worse UX than showing slightly stale data with a banner.
       setErrorMessage("Could not fetch recommendations. Try again in a few seconds.");
     } finally {
       if (isMountedRef.current) setIsLoading(false);
@@ -108,8 +112,10 @@ export default function PatientFlow() {
   };
 
   useEffect(() => {
-    if (hasInitializedRef.current) return;
+    // Only auto-query once per page load, even after tab-switch remounts.
+    if (_autoQuerySent || hasInitializedRef.current) return;
     hasInitializedRef.current = true;
+    _autoQuerySent = true;
     void runRecommendation("Auto triage critical care options nearby.");
   }, [runRecommendation]);
 

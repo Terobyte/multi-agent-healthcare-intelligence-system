@@ -53,9 +53,18 @@ export default function HospitalCard({
               {hospital.etaMinutes} min
             </span>
           </div>
-          <div className="mt-2">
-            <GreenPulse />
-          </div>
+          {/* Tier-1 only — render GreenPulse "verified live" pulse only when
+              the card is NOT demoted AND average trust ≥ 0.85. Otherwise the
+              pulse is misleading: a demoted hospital with a "live" beacon. */}
+          {!hospital.demoted &&
+          hospital.trustSignals.length > 0 &&
+          hospital.trustSignals.reduce((s, x) => s + x.score, 0) /
+            hospital.trustSignals.length >=
+            0.85 ? (
+            <div className="mt-2">
+              <GreenPulse />
+            </div>
+          ) : null}
         </div>
         <button
           type="button"

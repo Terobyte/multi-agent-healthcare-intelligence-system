@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { X } from "lucide-react";
+import { useEffect } from "react";
 import type { TrustEvidence } from "../lib/types";
 
 interface SourceModalProps {
@@ -11,6 +12,17 @@ interface SourceModalProps {
 }
 
 export default function SourceModal({ open, title, evidence, details, onClose }: SourceModalProps) {
+  // Esc-to-close — universal modal keyboard affordance. Only attaches the
+  // listener while the modal is actually open so background views stay clean.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
   return (
     <AnimatePresence>
       {open && (
@@ -20,6 +32,9 @@ export default function SourceModal({ open, title, evidence, details, onClose }:
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           onClick={onClose}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="source-modal-title"
         >
           <motion.div
             className="w-full max-w-lg rounded-2xl border border-slate-700 bg-slate-900 p-5 shadow-premium"
@@ -32,7 +47,7 @@ export default function SourceModal({ open, title, evidence, details, onClose }:
             <div className="mb-4 flex items-start justify-between gap-3">
               <div>
                 <div className="text-xs uppercase tracking-widest text-indigo-300">Source trace</div>
-                <h4 className="mt-1 text-lg font-semibold text-slate-100">{title}</h4>
+                <h4 id="source-modal-title" className="mt-1 text-lg font-semibold text-slate-100">{title}</h4>
               </div>
               <button
                 type="button"

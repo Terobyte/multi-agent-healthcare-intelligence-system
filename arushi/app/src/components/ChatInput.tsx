@@ -9,7 +9,9 @@ interface ChatInputProps {
 
 export default function ChatInput({ onSend, loading }: ChatInputProps) {
   const [query, setQuery] = useState("");
-  const maxChars = 180;
+  // Real medical intake descriptions can run several sentences (symptoms +
+  // duration + meds + history) — 180 was too tight for actual demo prompts.
+  const maxChars = 500;
 
   const submit = () => {
     const trimmed = query.trim();

@@ -16,20 +16,29 @@ export default function DoctorCopilot() {
     const load = async () => {
       setIsLoading(true);
       setErrorMessage(null);
-      try {
-        const [copilotData, hospitalResponse] = await Promise.all([
-          getDoctorCopilotData(),
-          recommend({ query: "Doctor copilot baseline hospitals" }),
-        ]);
-        setData(copilotData);
-        setHospitals(hospitalResponse.hospitals);
-        setSendingHospitalId(copilotData.sendingHospitalId);
-        setSelectedReceivingId(copilotData.receivingHospitalIds[0] ?? "");
-      } catch {
-        setErrorMessage("Could not load doctor copilot data.");
-      } finally {
-        setIsLoading(false);
+      // allSettled so a hospital fetch failure doesn't blank out the copilot
+      // UI (and vice versa). Each branch renders best-effort independently.
+      const [copilotResult, hospitalResult] = await Promise.allSettled([
+        getDoctorCopilotData(),
+        recommend({ query: "Doctor copilot baseline hospitals" }),
+      ]);
+
+      if (copilotResult.status === "fulfilled") {
+        setData(copilotResult.value);
+        setSendingHospitalId(copilotResult.value.sendingHospitalId);
+        setSelectedReceivingId(copilotResult.value.receivingHospitalIds[0] ?? "");
       }
+      if (hospitalResult.status === "fulfilled") {
+        setHospitals(hospitalResult.value.hospitals);
+      }
+
+      const failures: string[] = [];
+      if (copilotResult.status === "rejected") failures.push("copilot context");
+      if (hospitalResult.status === "rejected") failures.push("hospital list");
+      if (failures.length > 0) {
+        setErrorMessage(`Could not load: ${failures.join(", ")}. Showing partial data.`);
+      }
+      setIsLoading(false);
     };
 
     void load();
@@ -137,8 +146,9 @@ export default function DoctorCopilot() {
             <div className="mt-3 rounded-xl border border-slate-800 bg-slate-950/80 p-4">
               <div className="mb-2 text-xs text-slate-400">Route</div>
               <div className="text-sm text-slate-200">
-                {sendingHospital?.name ?? "Loading"} <span className="text-slate-500">&rarr;</span>{" "}
-                {activeReceiving?.name ?? "Loading"}
+                {sendingHospital?.name ?? (isLoading ? "Loading…" : "Unknown sending hospital")}{" "}
+                <span className="text-slate-500">&rarr;</span>{" "}
+                {activeReceiving?.name ?? (isLoading ? "Loading…" : "Select a receiving hospital")}
               </div>
               <div className="mt-3 flex flex-wrap gap-2">
                 <span className="rounded-full border border-indigo-500/50 bg-indigo-500/10 px-2.5 py-1 text-xs text-indigo-200">

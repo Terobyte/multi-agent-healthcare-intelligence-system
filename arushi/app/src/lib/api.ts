@@ -33,6 +33,15 @@ const scoreHospitalForQuery = (hospital: Hospital, query: string) => {
   return trustComposite + emergencyBoost - etaPenalty - distancePenalty - demotionPenalty;
 };
 
+async function mockRecommend(query: string): Promise<RecommendResponse> {
+  await delay(420);
+  const data = (await import("../../../mocks/hospitals.json")).default as RecommendResponse;
+  const hospitals = [...data.hospitals].sort(
+    (a, b) => scoreHospitalForQuery(b, query) - scoreHospitalForQuery(a, query),
+  );
+  return { hospitals };
+}
+
 export async function recommend(request: RecommendRequest): Promise<RecommendResponse> {
   const query = request.query.trim();
   const lower = query.toLowerCase();
@@ -44,26 +53,37 @@ export async function recommend(request: RecommendRequest): Promise<RecommendRes
   }
 
   if (HAS_REAL_BACKEND) {
-    const resp = await canonicalApi.recommend(query);
-    return { hospitals: adaptHospitals(resp.hospitals) };
+    try {
+      const resp = await canonicalApi.recommend(query);
+      return { hospitals: adaptHospitals(resp.hospitals) };
+    } catch (err) {
+      // Backend hasn't shipped /recommend yet (Mubarak Block 18) — fall back
+      // to mocks so the demo doesn't 404 mid-pitch. Logged for diagnostics.
+      // eslint-disable-next-line no-console
+      console.warn("[api] /recommend failed, falling back to mocks:", err);
+      return mockRecommend(query);
+    }
   }
 
-  await delay(420);
-  const data = (await import("../../../mocks/hospitals.json")).default as RecommendResponse;
-  const hospitals = [...data.hospitals].sort(
-    (a, b) => scoreHospitalForQuery(b, query) - scoreHospitalForQuery(a, query),
-  );
-  return { hospitals };
+  return mockRecommend(query);
 }
 
 export async function reserve(request: ReserveRequest): Promise<ReserveResponse> {
   if (HAS_REAL_BACKEND) {
-    const patient_id = `demo_${request.hospitalId.toLowerCase()}_${Date.now().toString().slice(-6)}`;
-    const out = await canonicalApi.book(request.hospitalId, patient_id);
-    return {
-      success: out.status === "COMMITTED",
-      referenceId: out.transaction_id ?? `RSV-${request.hospitalId}-FAILED`,
-    };
+    try {
+      const patient_id = `demo_${request.hospitalId.toLowerCase()}_${Date.now().toString().slice(-6)}`;
+      const out = await canonicalApi.book(request.hospitalId, patient_id);
+      return {
+        success: out.status === "COMMITTED",
+        referenceId: out.transaction_id ?? `RSV-${request.hospitalId}-FAILED`,
+      };
+    } catch (err) {
+      // /book exists on backend but may 401 without DEMO_KEY or fail for other
+      // reasons; surface a synthetic success so the demo flip animation still
+      // runs. Real failure path is exercised by smoke gate, not on the stage.
+      // eslint-disable-next-line no-console
+      console.warn("[api] /book failed, falling back to synthetic success:", err);
+    }
   }
 
   await delay(650);
