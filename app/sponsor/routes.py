@@ -61,7 +61,7 @@ def register(app: FastAPI, limiter: Limiter, require_demo_key: Any) -> None:
         "/sponsor/triage",
         dependencies=[Depends(require_demo_key)],
     )
-    @limiter.limit("20/minute")
+    @limiter.limit("120/minute")
     async def sponsor_triage(
         request: Request, body: _SponsorTriageRequest
     ) -> JSONResponse:
@@ -83,7 +83,7 @@ def register(app: FastAPI, limiter: Limiter, require_demo_key: Any) -> None:
         "/sponsor/genie/query",
         dependencies=[Depends(require_demo_key)],
     )
-    @limiter.limit("10/minute")
+    @limiter.limit("120/minute")
     async def sponsor_genie(
         request: Request, body: _SponsorGenieRequest
     ) -> JSONResponse:
@@ -100,7 +100,7 @@ def register(app: FastAPI, limiter: Limiter, require_demo_key: Any) -> None:
         "/sponsor/narrate",
         dependencies=[Depends(require_demo_key)],
     )
-    @limiter.limit("10/minute")
+    @limiter.limit("120/minute")
     async def sponsor_narrate(
         request: Request, body: _SponsorNarrateRequest
     ) -> StreamingResponse:

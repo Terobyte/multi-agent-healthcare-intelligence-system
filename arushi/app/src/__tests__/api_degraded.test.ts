@@ -96,6 +96,24 @@ describe("api degraded state", () => {
     expect(hasAuthError()).toBe(true);
   });
 
+  test("recommend rate limit does not switch to offline demo data", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith("/recommend")) {
+          return new Response("too many requests", { status: 429 });
+        }
+        return new Response("unexpected url", { status: 500 });
+      }),
+    );
+
+    const { isDegraded, recommend } = await import("../lib/api");
+
+    await expect(recommend({ query: "critical trauma" })).rejects.toThrow(/429/);
+    expect(isDegraded()).toBe(false);
+  });
+
   test("live railway recommend shape adapts without entering degraded mode", async () => {
     vi.stubGlobal(
       "fetch",

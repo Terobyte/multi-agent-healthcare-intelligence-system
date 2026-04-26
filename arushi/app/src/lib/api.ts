@@ -109,6 +109,12 @@ export async function recommend(request: RecommendRequest): Promise<RecommendRes
         _degraded = true;
         throw err;
       }
+      // 429 means the backend is reachable but the demo hit a rate bucket.
+      // Do not flip into offline mocks or the UI lies with "Backend unreachable".
+      if (err instanceof ApiError && err.status === 429) {
+        _degraded = false;
+        throw err;
+      }
       // Backend reachable but body wasn't JSON — schema drift, surface it.
       if (err instanceof ApiError && err.parse) {
         _degraded = true;

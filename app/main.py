@@ -406,7 +406,7 @@ class TriageRequest(BaseModel):
 
 
 @app.post("/triage", response_model=TriageOutput)
-@limiter.limit("20/minute")
+@limiter.limit("120/minute")
 async def triage_endpoint(request: Request, req: TriageRequest):
     """Symptom text → TriageOutput via Llama 3.3 70B (keyword fallback on error).
 
@@ -434,7 +434,7 @@ class RecommendResponse(BaseModel):
 
 
 @app.post("/recommend", response_model=RecommendResponse)
-@limiter.limit("20/minute")
+@limiter.limit("120/minute")
 async def recommend_endpoint(request: Request, req: RecommendRequest):
     """Symptom text → triage result + ranked hospitals (combined pipeline).
 
@@ -572,7 +572,7 @@ _ngo_cache: dict = {}
 
 
 @app.get("/ngo-data")
-@limiter.limit("10/minute")
+@limiter.limit("120/minute")
 async def ngo_data_endpoint(request: Request):
     now_ts = time.time()
     if _ngo_cache.get("ts", 0) + 300 > now_ts and "data" in _ngo_cache:
