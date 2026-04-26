@@ -35,7 +35,7 @@ const scoreHospitalForQuery = (hospital: Hospital, query: string) => {
 
 async function mockRecommend(query: string): Promise<RecommendResponse> {
   await delay(420);
-  const data = (await import("../../../mocks/hospitals.json")).default as RecommendResponse;
+  const data = (await import("../../mocks/hospitals.json")).default as RecommendResponse;
   const hospitals = [...data.hospitals].sort(
     (a, b) => scoreHospitalForQuery(b, query) - scoreHospitalForQuery(a, query),
   );
@@ -164,7 +164,7 @@ export async function streamReasoning(
 ): Promise<void> {
   // Mock-only: drives the legacy ReasoningPanel rows-prop UI. For real SSE
   // against /sse use ReasoningPanelSSE component (canonical event vocab).
-  const data = (await import("../../../mocks/reasoning.json")).default as ReasoningMessage[];
+  const data = (await import("../../mocks/reasoning.json")).default as ReasoningMessage[];
 
   for (const message of data) {
     for (let i = 0; i < message.tokens.length; i += 1) {
@@ -176,10 +176,10 @@ export async function streamReasoning(
 
 export async function getDoctorCopilotData(): Promise<DoctorCopilotData> {
   await delay(260);
-  return (await import("../../../mocks/doctor-copilot.json")).default as DoctorCopilotData;
+  return (await import("../../mocks/doctor-copilot.json")).default as DoctorCopilotData;
 }
 
 export async function getNGODashboardData(): Promise<NGODashboardData> {
   await delay(260);
-  return (await import("../../../mocks/ngo-dashboard.json")).default as NGODashboardData;
+  return (await import("../../mocks/ngo-dashboard.json")).default as NGODashboardData;
 }
