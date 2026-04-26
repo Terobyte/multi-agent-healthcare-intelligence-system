@@ -1,11 +1,12 @@
 import asyncio
+import hashlib
 import json
 import logging
 import os
 import re
 import time
 import concurrent.futures
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from pathlib import Path
 from typing import Optional
@@ -21,7 +22,9 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from app.agents.booking import book_atomic
 from app.agents.router import recommend as _recommend
 from app.agents.triage import triage as _triage_agent
-from app.schemas import BookingOutput, ReasoningPanelEvent, TriageOutput
+from app.agents.validator import validate as _validate
+from app.db import warehouse_query
+from app.schemas import BookingOutput, OutcomeFeedback, ReasoningPanelEvent, TriageOutput
 from app.settings import settings
 from contracts.schemas import RankedHospital
 import mlflow.deployments
@@ -32,6 +35,14 @@ _TOKEN_PATTERNS = [
     re.compile(r"\bdapi[a-zA-Z0-9._-]{8,}", re.IGNORECASE),
     re.compile(r"Authorization:\s*\S+", re.IGNORECASE),
 ]
+
+# Sponsor stack carries OpenAI/Fish secrets that the base patterns don't catch.
+# Pulled in passively (no inverse import); see app/sponsor/scrub.py.
+try:
+    from app.sponsor.scrub import PATTERNS as _SPONSOR_TOKEN_PATTERNS
+    _TOKEN_PATTERNS.extend(_SPONSOR_TOKEN_PATTERNS)
+except Exception:  # pragma: no cover — sponsor module may be absent in CI
+    pass
 
 
 def _scrub(text: str) -> str:
@@ -415,6 +426,11 @@ class RecommendResponse(BaseModel):
     triage: TriageOutput
     hospitals: list[RankedHospital]
     fast_path: bool
+    # Cost guard: "ok" when top-1 hospital was validated; "skipped" otherwise.
+    # Callers must NOT render a green "verified" checkmark when status != "ok".
+    validator_status: str = "skipped"
+    # None means unverified (validation was skipped or failed).
+    agreement: Optional[bool] = None
 
 
 @app.post("/recommend", response_model=RecommendResponse)
@@ -432,8 +448,106 @@ async def recommend_endpoint(request: Request, req: RecommendRequest):
     """
     triage_result = await asyncio.to_thread(_triage_agent, req.user_text, req.language)
     hospitals = await asyncio.to_thread(_recommend, triage_result, req.city)
+
+    # Cost guard: validate only the top-1 hospital, and only when triage
+    # confidence is low (< 0.7).  High-confidence triages skip the DB
+    # round-trip entirely — 1 call maximum per request, never top_n.
+    validator_status = "skipped"
+    agreement: Optional[bool] = None
+    if hospitals and triage_result.confidence < 0.7:
+        try:
+            v = await asyncio.to_thread(_validate, hospitals[0].hospital_id)
+            # Only claim "ok" (green pulse) when both models agree.
+            # Disagreement is treated the same as skipped — no false positive.
+            # agreement=None means "unverified"; True means verified+agreed.
+            # We never expose False here: disagreement collapses into skipped.
+            if v.agreement:
+                validator_status = "ok"
+                agreement = True
+            # else: leave validator_status="skipped" and agreement=None (unverified)
+        except Exception:
+            logger.exception("validator_failed hospital=%s", hospitals[0].hospital_id)
+
     return RecommendResponse(
         triage=triage_result,
         hospitals=hospitals,
         fast_path=triage_result.fast_path,
+        validator_status=validator_status,
+        agreement=agreement,
     )
+
+
+@app.post("/outcome", dependencies=[Depends(require_demo_key)])
+@limiter.limit("30/minute")
+async def outcome_route(request: Request, fb: OutcomeFeedback):
+    now = datetime.now(timezone.utc)
+    if fb.ts > now + timedelta(minutes=5):
+        raise HTTPException(status_code=422, detail="ts is in the future")
+    if fb.ts < now - timedelta(days=30):
+        raise HTTPException(status_code=422, detail="ts older than 30 days")
+
+    ok = await asyncio.to_thread(
+        warehouse_query,
+        "SELECT 1 FROM workspace.default.gold_trust_final WHERE facility_id=? LIMIT 1",
+        [fb.facility_id],
+    )
+    if not ok:
+        raise HTTPException(status_code=422, detail=f"facility {fb.facility_id} not in gold_trust_final")
+
+    if fb.transaction_id:
+        tx = await asyncio.to_thread(
+            warehouse_query,
+            "SELECT 1 FROM workspace.default.txn_atomic WHERE transaction_id=? LIMIT 1",
+            [fb.transaction_id],
+        )
+        if not tx:
+            raise HTTPException(status_code=422, detail=f"transaction {fb.transaction_id} not found")
+
+    if fb.feedback_id:
+        fid = fb.feedback_id
+    else:
+        key = f"{fb.patient_id}|{fb.facility_id}|{fb.factor}|{fb.ts.isoformat()}"
+        fid = f"fb_{hashlib.sha256(key.encode()).hexdigest()[:12]}"
+
+    await asyncio.to_thread(
+        warehouse_query,
+        """
+        MERGE INTO workspace.default.outcome_feedback t
+        USING (SELECT
+                 ? AS feedback_id, ? AS transaction_id, ? AS patient_id, ? AS facility_id,
+                 ? AS factor, CAST(? AS DOUBLE) AS actual_value,
+                 CAST(? AS DOUBLE) AS llm_predicted, ? AS source,
+                 ? AS notes, CAST(? AS TIMESTAMP) AS ts) s
+        ON t.feedback_id = s.feedback_id
+        WHEN NOT MATCHED THEN INSERT
+          (feedback_id, transaction_id, patient_id, facility_id, factor, actual_value,
+           llm_predicted, source, notes, ts)
+        VALUES
+          (s.feedback_id, s.transaction_id, s.patient_id, s.facility_id, s.factor,
+           s.actual_value, s.llm_predicted, s.source, s.notes, s.ts)
+        """,
+        [
+            fid, fb.transaction_id, fb.patient_id, fb.facility_id,
+            fb.factor, fb.actual_value, fb.llm_predicted,
+            fb.source, fb.notes,
+            fb.ts.strftime("%Y-%m-%d %H:%M:%S"),
+        ],
+    )
+
+    existing = await asyncio.to_thread(
+        warehouse_query,
+        "SELECT feedback_id FROM workspace.default.outcome_feedback WHERE feedback_id=? LIMIT 1",
+        [fid],
+    )
+    return {"status": "recorded" if existing else "already_recorded", "feedback_id": fid}
+
+
+# Sponsor stack — feature-flagged routes that wrap existing agents for the
+# Databricks-criteria pitch. Mounted last so the existing routes stay the
+# canonical demo path. See app/sponsor/routes.py and SPONSOR_STACK_PLAN.md.
+try:
+    from app.sponsor.routes import register as _register_sponsor
+
+    _register_sponsor(app, limiter, require_demo_key)
+except Exception:  # pragma: no cover — sponsor optional in CI
+    logger.exception("sponsor_routes_register_failed")
