@@ -497,9 +497,14 @@ async def recommend_endpoint(request: Request, req: RecommendRequest):
 @limiter.limit("30/minute")
 async def outcome_route(request: Request, fb: OutcomeFeedback):
     now = datetime.now(timezone.utc)
-    if fb.ts > now + timedelta(minutes=5):
+    # bug #90: a client posting a naive ISO string (no Z / +00:00) parses into a
+    # naive datetime, and `naive > aware` raises TypeError → 500 instead of 422.
+    # Coerce naive → UTC so the comparison below stays well-defined and the
+    # client gets the same 422 they would for a malformed timestamp.
+    fb_ts = fb.ts if fb.ts.tzinfo is not None else fb.ts.replace(tzinfo=timezone.utc)
+    if fb_ts > now + timedelta(minutes=5):
         raise HTTPException(status_code=422, detail="ts is in the future")
-    if fb.ts < now - timedelta(days=30):
+    if fb_ts < now - timedelta(days=30):
         raise HTTPException(status_code=422, detail="ts older than 30 days")
 
     hashed_pid = hash_patient_id(fb.patient_id)
