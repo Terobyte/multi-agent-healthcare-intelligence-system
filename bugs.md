@@ -195,3 +195,70 @@ expected to be red while these bugs remain open.
 | 75 | `tests/test_known_bugs_sweep_2026_04_26.py::test_bug75_child_resource_merge_must_lock_on_facility_resource_not_txn_only` |
 | 76 | `tests/test_known_bugs_sweep_2026_04_26.py::test_bug76_booking_validates_facility_has_required_capacity` |
 | 77 | `tests/test_known_bugs_sweep_2026_04_26.py::test_bug77_feedback_id_hash_input_must_strip_control_chars` |
+
+---
+
+## Tero Sweep (2026-04-26 evening) — bugs #78–114
+
+37 findings reported by Tero after the live `/book` 500 (icu_beds schema drift,
+fixed in commit `16b511c`). Numbered to continue from the prior sweep. Some
+overlap with earlier bugs; kept distinct so each gets a dedicated negative test
+in `tests/test_bugs_2026_04_26.py`.
+
+### P0 — критические
+
+| # | Bug | File:line |
+|---|-----|-----------|
+| 78 | Double-booking race — check-then-act без атомарного инкремента; два параллельных запроса проходят capacity check одновременно → overbooking | `app/agents/booking.py:106-131` |
+| 79 | SQL-интерполяция `pk_col` в f-string MERGE — whitelist для `table` есть, для `pk_col` нет | `app/agents/booking.py:201-209` |
+| 80 | Orphaned RESERVED rows — parent INSERT auto-commit'ится; если коннект падает до child MERGEs, parent остаётся RESERVED навсегда | `app/agents/booking.py:156-194` |
+| 81 | `float(row.get("p_bed") or 0.0)` — NULL `p_bed` → 0.0 → composite score обнуляется → больница вылетает из выдачи | `app/agents/router.py:455` |
+| 82 | `trust=0.0 treated as missing` — `float(... or ...)` трактует 0.0 как falsy → fallback на `trust_score` вместо `trust_calibrated` | `app/agents/router.py:452` |
+| 83 | Markdown fence crash — `raw.split("```", 2)[1]` → `IndexError` если LLM вернёт только один fence | `app/agents/triage.py:296-300` |
+| 84 | Format string crash — `f"v1={v1:.2f}"` на `None` → `TypeError` (single-model данные) | `app/agents/validator.py:158` |
+| 85 | Chunked transfer bypass — body size middleware проверяет только `Content-Length`; chunked encoding проходит без лимита | `app/main.py:135-148` |
+| 86 | Negative `Content-Length` — `int("-100") > 65536 → False`, запрос проходит | `app/main.py:135-148` |
+| 87 | Conversation ID auth bypass — любой `conversation_id` принимается без проверки ownership | `app/sponsor/genie.py:122-140` |
+| 88 | FD leak — файловый дескриптор не закрывается, если consumer прерывает generator раньше времени | `app/sponsor/voice_narration.py:110-135` |
+
+### P1 — важные
+
+| # | Bug | File:line |
+|---|-----|-----------|
+| 89 | `_scrubbed_500` без `trace_id` — все 5xx выглядят одинаково, Databricks outage и capacity rejection неразличимы | `app/main.py:269-276` |
+| 90 | Naive datetime crash — клиент шлёт `datetime` без timezone, `fb.ts > now` → `TypeError` | `app/main.py:499-503` |
+| 91 | Thread pool exhaustion — `_fm_executor(max_workers=2)` зависает навсегда, если Databricks API hang'ает дважды | `app/main.py:207-243` |
+| 92 | `X-Forwarded-For` spoofing — rate limit обходится подстановкой произвольного IP в XFF | `app/main.py:159-172` |
+| 93 | SSE heartbeat race — heartbeat не проверяет `disconnect`/`producer.done()`, queue растёт без лимита | `app/main.py:321-350` |
+| 94 | SSE cleanup — `await t` вместо `asyncio.gather(return_exceptions=True)` — исключение оставит heartbeat незаканселленным | `app/main.py:352-370` |
+| 95 | Rollback partial failure — если один child cancellation падает, loop продолжает; одни children RESERVED, другие CANCELLED | `app/agents/booking.py:269-281` |
+| 96 | Нет классификации ошибок — timeout и constraint violation обрабатываются одинаково, нет retry для retryable errors | `app/agents/booking.py:214-216` |
+| 97 | Cartesian product risk — `LEFT JOIN` без `GROUP BY`/`DISTINCT` на `facility_id` → дубли если `v_trust_calibrated` имеет >1 row | `app/agents/router.py:281-282` |
+| 98 | Unknown city silent fallback — неизвестный город молча подставляет центр Индии без warning | `app/agents/router.py:172` |
+| 99 | Pydantic `ValidationError` не в `except` списке (только `ValueError`) | `app/agents/triage.py:184` |
+| 100 | Unicode control char gap — regex фильтрует только ASCII controls; Unicode C1/bidi/zero-width проходят | `app/agents/triage.py:82` |
+| 101 | `WorkspaceClient` init hang — нет timeout при создании клиента → блокирует workers | `app/sponsor/genie.py:77-86` |
+| 102 | `httpx.stream(timeout=10.0)` — только read timeout, TCP SYN hang'ает worker (нужен `Timeout(connect=...)`) | `app/sponsor/voice_narration.py:160` |
+| 103 | Silent empty string — malformed input → `_extract_user_text()` возвращает `""` → triage падает, ошибка маскируется | `app/sponsor/agent_bricks.py:41-60` |
+| 104 | 429 не обрабатывается в `reserve()` — 6-й клик показывает "Reservation failed. Please retry." вместо "Too many bookings" | `arushi/app/src/lib/api.ts:145-159` |
+| 105 | Silent mock fallback — `/recommend` падает → пользователь видит фейковые больницы с маленьким баннером | `arushi/app/src/lib/api.ts:104-127` |
+| 106 | Нет connection pooling — каждый query = новый коннект → connection exhaustion под нагрузкой | `app/db.py:33-39` |
+| 107 | Hardcoded 2s sleep на retry — нет exponential backoff, thundering herd при холодном warehouse | `app/db.py:47` |
+
+### P2 — менее критичные
+
+| # | Bug | File:line |
+|---|-----|-----------|
+| 108 | False positive — regex `\b[a-f0-9]{32}\b` красит легитимные MD5 / transaction ID как PII | `app/sponsor/scrub.py:24` |
+| 109 | Missing httpx timeout handling — ловит только `CancelledError` (не `TimeoutException`/`ReadError`) | `app/agents/reasoning_stream.py:27-67` |
+| 110 | Hash collision risk — только 16 hex chars (64 bit) для patient ID hash | `app/util.py:83` |
+| 111 | Float precision — `1.0000000000000002` пройдёт `le=1.0` validator | `app/schemas.py:25-26` |
+| 112 | Schema mismatch — `RankedHospital` имеет `hospital_id`, property alias `facility_id` может ломать frontend | `contracts/schemas.py` ↔ `app/agents/router.py` |
+| 113 | Silent corpus degradation — если >10% rows malformed, возвращается пустой результат без warning | `app/sponsor/knowledge_assistant.py:74-80` |
+| 114 | Flag read race — два `os.getenv()` без атомарности между check и parse | `app/sponsor/flags.py:12-16` |
+
+Negative tests for #78–114 live in `tests/test_bugs_2026_04_26.py` (and the
+matching frontend file `arushi/app/src/__tests__/bugs_2026_04_26.test.tsx`).
+Each test that PASSES today proves the bug is real and reproducible. After a
+fix lands, the same test should FAIL with the new behaviour, prompting an
+update of the assertion to lock in the fix.
