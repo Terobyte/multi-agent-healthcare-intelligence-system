@@ -1,3 +1,4 @@
+import logging
 import time
 import concurrent.futures
 from functools import lru_cache
@@ -9,6 +10,15 @@ from app.agents.booking import book_atomic
 from app.schemas import BookingOutput
 from app.settings import settings
 import mlflow.deployments
+
+# Forward our app loggers ("booking", "app.*") to stderr so Render's log tail
+# captures saga compensation errors. uvicorn's default config only configures
+# its own loggers; named loggers are silent without this.
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
+logger = logging.getLogger("app.main")
 
 app = FastAPI(title="AarogyaNet")
 app.add_middleware(
@@ -83,4 +93,16 @@ class BookRequest(BaseModel):
 
 @app.post("/book", response_model=BookingOutput)
 def book(req: BookRequest):
-    return book_atomic(req.facility_id, req.patient_id, {})
+    try:
+        return book_atomic(req.facility_id, req.patient_id, {})
+    except Exception:
+        # Warehouse cold-start / auth / network failure escapes the saga's
+        # internal try blocks (which only wrap individual queries). Return a
+        # structured REJECTED so the UI gets a usable BookingOutput shape
+        # instead of FastAPI's bare {"detail":"Internal Server Error"}.
+        logger.exception("book_endpoint_unhandled facility=%s patient=%s", req.facility_id, req.patient_id)
+        return BookingOutput(
+            transaction_id=None, status="REJECTED",
+            resources={}, facility_id=req.facility_id,
+            reason="warehouse unavailable",
+        )

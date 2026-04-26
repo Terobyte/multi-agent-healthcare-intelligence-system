@@ -41,6 +41,7 @@ class BookingOutput(BaseModel):
     resources: dict[str, str]
     facility_id: str
     reason: Optional[str] = None             # human-readable reason for REJECTED/ROLLED_BACK
+    commit_error: Optional[str] = None       # set when children OK but parent COMMIT update raised
 
 
 class IntakeHandshake(BaseModel):

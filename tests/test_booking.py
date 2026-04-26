@@ -45,16 +45,12 @@ def test_resource_fail_rolls_back(monkeypatch, table_substr, short_key):
 
     def fake(query, params=None, _retries=1):
         call_log.append((query, params or []))
-        # facility existence check → return a row so saga proceeds
         if "FROM workspace.default.gold_trust_final" in query:
             return [("5603",)]
-        # duplicate-active-txn check → no active txn
         if "FROM workspace.default.txn_atomic" in query and query.lstrip().startswith("SELECT"):
             return []
-        # the targeted resource MERGE → raise
         if table_substr in query and "MERGE INTO" in query:
             raise RuntimeError(f"simulated {table_substr} failure")
-        # everything else (parent INSERT, parent UPDATE, child UPDATE, other MERGEs) → succeed
         return None
 
     monkeypatch.setattr(booking_module, "warehouse_query", fake)
@@ -62,10 +58,27 @@ def test_resource_fail_rolls_back(monkeypatch, table_substr, short_key):
 
     assert r["status"] == "ROLLED_BACK", f"expected ROLLED_BACK, got {r}"
     assert "FAIL" in r["resources"][short_key]
-    # all resources scheduled BEFORE the failing one must be OK
     order = ["bed", "ambulance", "doctor", "drug"]
     for k in order[: order.index(short_key)]:
         assert r["resources"][k] == "OK", f"earlier resource {k} should be OK, got {r['resources'][k]}"
+
+    # rollback compensation must actually issue UPDATE statements for each earlier-OK resource
+    cancel_targets = {
+        "bed": "bed_reservations", "ambulance": "ambulance_dispatches",
+        "doctor": "doctor_slots", "drug": "drug_reservations",
+    }
+    for k in order[: order.index(short_key)]:
+        table = cancel_targets[k]
+        assert any(
+            f"UPDATE workspace.default.{table} " in q and "status='CANCELLED'" in q
+            for q, _ in call_log
+        ), f"missing CANCELLED UPDATE for {table}"
+
+    # parent must be rolled back exactly once
+    assert sum(
+        1 for q, _ in call_log
+        if "UPDATE workspace.default.txn_atomic" in q and "status='ROLLED_BACK'" in q
+    ) == 1
 
 
 def test_parent_commit_update_failure_triggers_child_cancel(monkeypatch):
@@ -86,7 +99,11 @@ def test_parent_commit_update_failure_triggers_child_cancel(monkeypatch):
     r = book_atomic("5603", "smoke_p_commit_fail", {})
 
     assert r["status"] == "ROLLED_BACK"
-    assert "_commit_update_failed" in r["resources"]
+    # commit_error must be surfaced as a top-level field, NOT inside resources dict
+    assert r.get("commit_error") is not None and "simulated parent" in r["commit_error"]
+    assert "_commit_update_failed" not in r["resources"]
+    # the rollback's failure_reason must be the actual commit error, not the placeholder
+    assert "simulated parent" in r["reason"]
     # all 4 child inserts had succeeded before parent UPDATE failure
     for short in ("bed", "ambulance", "doctor", "drug"):
         assert r["resources"][short] == "OK"
@@ -104,6 +121,26 @@ def test_phantom_facility_rejected_unit(monkeypatch):
     assert r["status"] == "REJECTED"
     assert r["transaction_id"] is None
     assert "not in gold_trust_final" in r["reason"]
+
+
+def test_parent_insert_failure_returns_rejected(monkeypatch):
+    """Warehouse-down at parent INSERT — must REJECT cleanly, no leaked exception text."""
+    def fake(query, params=None, _retries=1):
+        if "FROM workspace.default.gold_trust_final" in query:
+            return [("5603",)]
+        if "FROM workspace.default.txn_atomic" in query and query.lstrip().startswith("SELECT"):
+            return []
+        if query.lstrip().startswith("INSERT INTO workspace.default.txn_atomic"):
+            raise RuntimeError("simulated cold-start: warehouse not running")
+        return None
+
+    monkeypatch.setattr(booking_module, "warehouse_query", fake)
+    r = book_atomic("5603", "smoke_p_parent_fail", {})
+    assert r["status"] == "REJECTED"
+    assert r["transaction_id"] is None
+    # reason must NOT leak the raw exception text (which could include warehouse host / token hints)
+    assert "simulated cold-start" not in r["reason"]
+    assert r["reason"] == "parent insert failed"
 
 
 def test_duplicate_active_txn_rejected_unit(monkeypatch):

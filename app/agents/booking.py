@@ -65,14 +65,19 @@ def book_atomic(facility_id: str, patient_id: str, factors_required: dict) -> di
             [txn_id, patient_id, facility_id],
         )
     except Exception as e:
+        # Don't leak warehouse hostname / table path / internal stack into the API response.
+        logger.exception("parent_insert_failed txn=%s patient=%s", txn_id, patient_id)
         return {
             "transaction_id": None, "status": "REJECTED",
             "resources": {}, "facility_id": facility_id,
-            "reason": f"parent insert failed: {e}",
+            "reason": "parent insert failed",
         }
 
-    # 4. child inserts (idempotent MERGE — re-running same txn_id is a no-op)
+    # 4. child inserts (MERGE used for parameterized atomic INSERT — re-running
+    # an identical txn_id is a no-op, but we never re-run because txn_id is a
+    # fresh UUID4 per call).
     results: dict[str, str] = {}
+    commit_error: str | None = None
     for table, pk_col, init_status in RESOURCE_TABLES:
         assert table in ALLOWED_TABLES, "table allowlist guard against future user-input bugs"
         short = table.split("_")[0]   # bed | ambulance | doctor | drug
@@ -88,11 +93,12 @@ def book_atomic(facility_id: str, patient_id: str, factors_required: dict) -> di
             )
             results[short] = "OK"
         except Exception as e:
+            logger.exception("child_merge_failed txn=%s table=%s", txn_id, table)
             results[short] = f"FAIL: {str(e)[:200]}"
             break
 
     # 5. compensating decision
-    if all(v == "OK" for v in results.values()):
+    if results and all(v == "OK" for v in results.values()) and len(results) == len(RESOURCE_TABLES):
         try:
             warehouse_query(
                 "UPDATE workspace.default.txn_atomic "
@@ -105,14 +111,16 @@ def book_atomic(facility_id: str, patient_id: str, factors_required: dict) -> di
                 "resources": results, "facility_id": facility_id,
             }
         except Exception as e:
-            # parent UPDATE failed after children OK — fall through to rollback
-            logger.error("commit_update_failed txn=%s err=%s", txn_id, e)
-            results["_commit_update_failed"] = str(e)[:200]
+            # parent UPDATE failed after children OK — fall through to rollback.
+            # Keep commit_error in its own variable, NOT inside results, so the
+            # downstream UI doesn't render a fake "_commit_update_failed" resource row.
+            logger.exception("commit_update_failed txn=%s", txn_id)
+            commit_error = str(e)[:200]
 
     # rollback path
-    fail_reason = next(
-        (v for v in results.values() if v.startswith("FAIL")),
-        "post-commit-fail",
+    fail_reason = (
+        commit_error
+        or next((v for v in results.values() if v.startswith("FAIL")), "post-commit-fail")
     )[:500]
     try:
         warehouse_query(
@@ -121,11 +129,11 @@ def book_atomic(facility_id: str, patient_id: str, factors_required: dict) -> di
             "WHERE transaction_id=?",
             [fail_reason, txn_id],
         )
-    except Exception as e:
-        logger.error("rollback_parent_update_failed txn=%s err=%s", txn_id, e)
+    except Exception:
+        logger.exception("rollback_parent_update_failed txn=%s", txn_id)
 
     for short, v in results.items():
-        if short.startswith("_") or v != "OK":
+        if v != "OK":
             continue
         table = RESOURCE_TABLE_BY_SHORT[short]
         assert table in {"bed_reservations", "ambulance_dispatches", "doctor_slots", "drug_reservations"}
@@ -136,11 +144,12 @@ def book_atomic(facility_id: str, patient_id: str, factors_required: dict) -> di
                 f"WHERE transaction_id=?",
                 [txn_id],
             )
-        except Exception as e:
-            logger.error("rollback_child_update_failed txn=%s table=%s err=%s", txn_id, table, e)
+        except Exception:
+            logger.exception("rollback_child_update_failed txn=%s table=%s", txn_id, table)
 
     return {
         "transaction_id": txn_id, "status": "ROLLED_BACK",
         "resources": results, "facility_id": facility_id,
         "reason": fail_reason,
+        "commit_error": commit_error,
     }
