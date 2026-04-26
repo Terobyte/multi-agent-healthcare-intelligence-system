@@ -76,15 +76,15 @@ def book_atomic(facility_id: str, patient_id: str, factors_required: dict) -> di
 
 def _book_atomic_inner(facility_id: str, hashed_pid: str, factors_required: dict) -> dict:
     # 1. facility existence + non-zero capacity — never insert a txn for a
-    # phantom facility, and require icu_beds/capacity > 0 directly in the
-    # filter so a configured-but-empty facility row doesn't open a saga
-    # against a hospital with zero beds (bug #76). The COALESCE makes the
-    # predicate tolerant of either column populating capacity in the gold
-    # layer.
+    # phantom facility, and block facilities that explicitly report zero
+    # capacity (bug #76). NULL capacity is the common case in the gold layer
+    # (most rows are unscored) — treat unknown as "trust the recommend
+    # ranker, which already vetted trust + specialty match" rather than
+    # rejecting every booking the user could plausibly make.
     rows = warehouse_query(
         "SELECT facility_id FROM workspace.default.gold_trust_final"
         " WHERE facility_id=?"
-        " AND COALESCE(icu_beds, capacity, 0) > 0",
+        " AND (capacity IS NULL OR capacity > 0)",
         [facility_id],
     )
     if not rows:
@@ -98,14 +98,13 @@ def _book_atomic_inner(facility_id: str, hashed_pid: str, factors_required: dict
     # 2. partial resource availability — confirm the bed pool isn't already
     # fully reserved before we walk the saga (bug #73). The bed_reservations
     # table is the gating capacity for the demo; if RESERVED rows exceed the
-    # facility's icu_beds/capacity we reject without ever writing a parent
-    # row. The check is best-effort — if the warehouse mock doesn't answer
-    # (returns None/empty) we treat it as "no signal" and proceed, matching
-    # existing test expectations and avoiding spurious rejections when the
-    # capacity column is null.
+    # facility's capacity we reject without ever writing a parent row. The
+    # check is best-effort — if the warehouse mock doesn't answer (returns
+    # None/empty) or capacity is NULL we treat it as "no signal" and proceed,
+    # matching existing test expectations and avoiding spurious rejections.
     bed_avail = warehouse_query(
         "SELECT bed_capacity, reserved_beds FROM ("
-        "  SELECT COALESCE(MAX(g.icu_beds), MAX(g.capacity), 0) AS bed_capacity,"
+        "  SELECT COALESCE(MAX(g.capacity), 0) AS bed_capacity,"
         "         (SELECT COUNT(*) FROM workspace.default.bed_reservations br"
         "          WHERE br.facility_id=? AND br.status='RESERVED') AS reserved_beds"
         "  FROM workspace.default.gold_trust_final g"
