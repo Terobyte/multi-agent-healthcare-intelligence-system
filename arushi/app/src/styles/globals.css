@@ -41,14 +41,39 @@ body {
 
 /* Verified-live pulse ring — sage. */
 @keyframes cg-pulse-ring {
-  0%, 100% { box-shadow: 0 0 0 4px rgba(74, 107, 63, 0.25); }
-  50%      { box-shadow: 0 0 0 7px rgba(74, 107, 63, 0.15); }
+  0%, 100% { box-shadow: 0 0 0 4px rgba(74, 107, 63, 0.22); }
+  50%      { box-shadow: 0 0 0 7px rgba(74, 107, 63, 0.12); }
 }
 .cg-pulse-dot {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: #4A6B3F;
-  box-shadow: 0 0 0 4px rgba(74, 107, 63, 0.25);
-  animation: cg-pulse-ring 2s ease-in-out infinite;
+  background: #C8E4D0;
+  box-shadow: 0 0 0 4px rgba(74, 107, 63, 0.22);
+  animation: cg-pulse-ring 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cg-pulse-dot {
+    animation: none;
+  }
+}
+
+/* Shared overline hairline so right-rail panels feel related without adding chrome. */
+.cg-overline-rule {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.cg-overline-rule::after {
+  content: "";
+  width: 42px;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(255, 176, 136, 0.74), rgba(255, 176, 136, 0));
+  transform: translateY(0.5px);
+}
+
+.cg-overline-rule-sage::after {
+  background: linear-gradient(90deg, rgba(200, 228, 208, 0.70), rgba(200, 228, 208, 0));
 }

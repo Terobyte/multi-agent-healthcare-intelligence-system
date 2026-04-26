@@ -83,12 +83,12 @@ export default {
       },
       keyframes: {
         "cg-pulse-glow": {
-          "0%,100%": { boxShadow: "0 0 0 4px rgba(74,107,63,0.25)" },
-          "50%": { boxShadow: "0 0 0 7px rgba(74,107,63,0.15)" },
+          "0%,100%": { boxShadow: "0 0 0 4px rgba(74,107,63,0.22)" },
+          "50%": { boxShadow: "0 0 0 7px rgba(74,107,63,0.12)" },
         },
       },
       animation: {
-        "cg-pulse-glow": "cg-pulse-glow 2s ease-in-out infinite",
+        "cg-pulse-glow": "cg-pulse-glow 1.4s ease-in-out infinite",
       },
     },
   },

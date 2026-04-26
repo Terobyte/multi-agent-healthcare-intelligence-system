@@ -6,17 +6,19 @@ export type BookingState = "idle" | "reserving" | "success" | "rollback";
 const tileLabels = ["Bed", "Oxygen", "Drug", "Specialist"];
 
 const stateClass = {
-  success: "border-[rgba(74,107,63,0.40)] bg-[rgba(74,107,63,0.20)] text-cg-sage",
-  rollback: "border-[rgba(194,82,43,0.40)] bg-[rgba(194,82,43,0.20)] text-cg-peach",
+  success:
+    "border-[rgba(74,107,63,0.40)] bg-[rgba(74,107,63,0.20)] text-cg-sage shadow-[0_0_0_1px_rgba(135,168,120,0.22)]",
+  rollback:
+    "border-[rgba(194,82,43,0.40)] bg-[rgba(194,82,43,0.20)] text-cg-peach shadow-[0_0_0_1px_rgba(255,176,136,0.20)]",
   idle: "border-white/[0.06] bg-[rgba(40,40,42,0.7)] text-cg-mist5",
   reserving: "border-white/[0.06] bg-[rgba(40,40,42,0.7)] text-cg-mist5",
 } as const;
 
 const stateLabel: Record<BookingState, string> = {
   idle: "Idle — press Reserve on a hospital",
-  reserving: "Checking 4 resources…",
+  reserving: "Checking bed, oxygen, drug, and specialist legs…",
   success: "All 4 matched — committed",
-  rollback: "Rolled back — one or more failed",
+  rollback: "Rolled back before dispatch",
 };
 
 interface AtomicBookingTilesProps {
@@ -41,25 +43,29 @@ export default function AtomicBookingTiles({
   return (
     <div className="rounded-cg-card border border-white/[0.05] bg-[rgba(35,35,36,0.85)] p-4 backdrop-blur-cg-glass">
       <div className="mb-1 flex items-center justify-between gap-3">
-        <div className="text-sm font-semibold text-cg-ivory">Atomic booking</div>
+        <div className="cg-overline-rule cg-overline-rule-sage text-[10px] font-semibold uppercase tracking-cg-overline text-cg-mist4">
+          Atomic booking
+        </div>
         {onTriggerDemo ? (
           <button
             type="button"
             onClick={onTriggerDemo}
             disabled={demoDisabled || state === "reserving"}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-cg-peach px-2.5 py-1 text-[11px] font-semibold text-cg-peach-ink transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-cg-peach px-2.5 py-1 text-[11px] font-semibold text-cg-peach-ink transition duration-[180ms] ease-out hover:-translate-y-px hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Play size={11} fill="currentColor" />
             Run match
           </button>
         ) : null}
       </div>
-      <div className="mb-3 text-[11px] text-cg-mist3">{stateLabel[state]}</div>
+      <div className="mb-3 text-sm font-semibold tracking-[-0.01em] text-cg-ivory">
+        {stateLabel[state]}
+      </div>
       <div className="grid grid-cols-2 gap-2">
         {tileLabels.map((tile, index) => (
           <motion.div
             key={tile}
-            className={`rounded-cg-tile border px-3 py-3 text-center text-xs font-semibold transition ${stateClass[state]}`}
+            className={`rounded-cg-tile border px-3 py-3 text-center text-xs font-semibold transition-[background,border-color,box-shadow,transform] duration-[220ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${stateClass[state]}`}
             animate={{
               rotateX: state === "success" || state === "rollback" ? [0, 90, 0] : 0,
               scale: state === "reserving" ? [1, 1.02, 1] : 1,

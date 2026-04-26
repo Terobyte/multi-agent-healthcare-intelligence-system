@@ -70,19 +70,21 @@ export default function ChatInput({ onSend, loading }: ChatInputProps) {
       ? `${query.trimEnd()}${query.trim() ? " " : ""}${transcript}`
       : query;
 
-  const statusLine = listening
-    ? "● listening (hi-IN)"
-    : truncationWarning
-      ? truncationWarning
-      : error
-        ? `mic: ${error}`
-        : "";
+  const statusLine = loading
+    ? "Triaging your symptoms..."
+    : listening
+      ? "● listening (hi-IN)"
+      : truncationWarning
+        ? truncationWarning
+        : error
+          ? `mic: ${error}`
+          : "";
 
   return (
-    <div className="rounded-2xl border border-white/[0.05] bg-[rgba(40,40,42,0.7)] px-3.5 py-3 backdrop-blur-cg-glass">
-      <div className="flex items-center gap-2.5">
+    <div className="rounded-cg-card border border-white/[0.05] bg-[rgba(40,40,42,0.7)] px-[18px] py-4 backdrop-blur-cg-glass">
+      <div className="flex flex-wrap items-center gap-2.5">
         <input
-          className="h-8 flex-1 bg-transparent text-[13px] text-cg-mist5 placeholder:text-cg-mist4 outline-none"
+          className="h-8 min-w-0 flex-[1_1_100%] bg-transparent text-[13px] text-cg-mist5 placeholder:text-cg-mist4 outline-none sm:flex-1"
           placeholder="Chest tightness, age 64, started 30 min ago…"
           value={displayValue}
           onChange={(e) => {
@@ -116,7 +118,7 @@ export default function ChatInput({ onSend, loading }: ChatInputProps) {
                 : "Speak Hindi (hi-IN)"
           }
           className={
-            "flex h-8 w-8 items-center justify-center rounded-full border transition " +
+            "flex h-8 w-10 flex-none items-center justify-center rounded-full border transition hover:-translate-y-px sm:w-8 " +
             (!supported
               ? "cursor-not-allowed border-white/[0.06] text-cg-mist4"
               : listening
@@ -131,15 +133,15 @@ export default function ChatInput({ onSend, loading }: ChatInputProps) {
           type="button"
           onClick={() => submit()}
           disabled={loading || listening || !query.trim()}
-          className="flex h-8 items-center gap-1.5 rounded-lg bg-cg-peach-ink px-3 text-[12px] font-semibold text-cg-peach-ctx transition hover:bg-cg-peach-inkHi disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg bg-cg-peach-ink px-3 text-[12px] font-semibold text-cg-peach-ctx transition hover:-translate-y-px hover:bg-cg-peach-inkHi disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none"
         >
           <SendHorizontal size={13} />
           {loading ? "Sending…" : "Send"}
         </motion.button>
       </div>
-      <div className="mt-1.5 flex items-center justify-between text-[10px]">
+      <div className="mt-1.5 flex items-center justify-between gap-3 text-[10px]">
         <span className="text-cg-peach/80">{statusLine}</span>
-        <span className="text-cg-mist4">
+        <span className="shrink-0 text-cg-mist4 tabular-nums">
           {query.length}/{maxChars}
         </span>
       </div>

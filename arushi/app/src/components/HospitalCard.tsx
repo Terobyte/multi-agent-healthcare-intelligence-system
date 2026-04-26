@@ -44,23 +44,29 @@ function HospitalCard({
   }, [hospital.trustSignals]);
 
   const liveEligible = !hospital.demoted && avgTrust >= 0.85;
+  const shadowEligible = liveEligible && avgTrust >= 0.89;
+  const cardPadding = liveEligible ? "p-[22px]" : hospital.demoted ? "p-4" : "p-[18px]";
+  const litClass = shadowEligible
+    ? "border-[rgba(200,228,208,0.18)] shadow-[0_12px_30px_rgba(135,168,120,0.16)]"
+    : "border-white/[0.05]";
 
   return (
     <motion.div
       layout
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
-      className="rounded-cg-card border border-white/[0.05] bg-[rgba(35,35,36,0.85)] p-4 backdrop-blur-cg-glass transition hover:border-white/[0.12]"
+      transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+      className={`rounded-cg-card border bg-[rgba(35,35,36,0.85)] backdrop-blur-cg-glass transition-[transform,border-color,background-color] duration-[180ms] ease-out hover:-translate-y-0.5 hover:border-white/[0.12] ${cardPadding} ${litClass}`}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <h3 className="text-base font-semibold tracking-[-0.01em] text-cg-ivory">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-base font-bold leading-[1.18] tracking-[-0.015em] text-cg-ivory">
               {hospital.name}
             </h3>
             {hospital.demoted ? <DemotedBadge /> : null}
           </div>
-          <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-cg-mist2">
+          <div className="mt-1.5 flex flex-wrap items-center gap-3 text-xs text-cg-mist2 tabular-nums">
             <span className="inline-flex items-center gap-1">
               <MapPin size={13} />
               {hospital.distanceKm} km
@@ -82,9 +88,9 @@ function HospitalCard({
           onClick={() => onReserve(hospital.id)}
           // Loud peach CTA — design rule says only ONE high-saturation peach
           // surface per view, but the lit-card hero variant was reverted to a
-          // uniform list, so the CTA carries the urgency now. Larger padding
-          // + shadow makes the trigger for the atomic-booking saga obvious.
-          className="rounded-xl bg-cg-peach px-4 py-2.5 text-sm font-semibold text-cg-peach-ink shadow-cg-peach transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+          // uniform list, so the CTA carries the urgency now without adding a
+          // second lit surface.
+          className="shrink-0 rounded-xl bg-cg-peach px-4 py-2.5 text-sm font-bold text-cg-peach-ink transition duration-[180ms] ease-out hover:-translate-y-px hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {reserving ? "Reserving…" : "Reserve →"}
         </button>
@@ -95,8 +101,9 @@ function HospitalCard({
           <motion.button
             key={signal.kind}
             type="button"
-            whileHover={{ y: -1.5 }}
-            className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
+            whileHover={{ y: -1 }}
+            transition={{ duration: 0.18, ease: "easeOut" }}
+            className={`min-w-0 rounded-full border px-3 py-1.5 text-xs font-semibold leading-none transition ${
               trustPillByKind[signal.kind] ?? trustPillByKind.Specialist
             }`}
             onClick={() =>

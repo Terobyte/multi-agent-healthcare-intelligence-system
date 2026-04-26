@@ -1,0 +1,973 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Patient Flow Polish Prototype</title>
+  <style>
+/*
+// CHANGES:
+// 1. Microtype: tabular figures, tighter title tracking, and baseline-aligned overlines.
+// 2. Rhythm: major sections breathe at 24px while intra-card groups compress to 4-6px.
+// 3. Separators: repeated peach/sage hairlines replace stacked boxed subsections.
+// 4. Live states: verified and atomic states gain physical 1px ring expansion with color shift.
+// 5. Motion: 180ms hover lifts and 220ms layout easing, with reduced-motion fallback.
+// 6. Clinical copy: loading/empty/rollback text uses clinician-facing language.
+*/
+    :root {
+      --ink: #0F0F10;
+      --stage: #1A1A1B;
+      --glass: rgba(35, 35, 36, 0.85);
+      --glass-strong: rgba(20, 20, 21, 0.72);
+      --ivory: #F4F1EA;
+      --mist-1: #B0AAA0;
+      --mist-2: #9A9690;
+      --mist-3: #8A8478;
+      --mist-4: #7A746A;
+      --mist-5: #D8D4CC;
+      --peach: #FFB088;
+      --peach-mid: #E87B43;
+      --peach-deep: #C2522B;
+      --peach-ink: #2A1709;
+      --sage: #C8E4D0;
+      --sage-mid: #87A878;
+      --sage-deep: #5C7A4F;
+      --sage-ink: #1F2A1A;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      background: var(--ink);
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ivory);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background:
+        radial-gradient(circle at 12% 0%, rgba(255, 176, 136, 0.09), transparent 30%),
+        radial-gradient(circle at 88% 12%, rgba(135, 168, 120, 0.08), transparent 32%),
+        var(--ink);
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+    }
+
+    button,
+    input {
+      font: inherit;
+    }
+
+    button {
+      cursor: pointer;
+    }
+
+    button:disabled {
+      cursor: not-allowed;
+    }
+
+    svg {
+      display: block;
+      flex: 0 0 auto;
+      stroke: currentColor;
+      stroke-width: 1.5;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .shell {
+      width: min(1304px, calc(100% - 48px));
+      margin: 0 auto;
+      padding: 24px 0 40px;
+    }
+
+    .app-header {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    /* polish: A consistent overline treatment gives every panel the same quiet editorial cue. */
+    .overline {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 15px;
+      color: var(--mist-4);
+      font-size: 10.5px;
+      font-weight: 700;
+      letter-spacing: 0.10em;
+      line-height: 1;
+      text-transform: uppercase;
+    }
+
+    .overline::after {
+      content: "";
+      width: 42px;
+      height: 1px;
+      background: linear-gradient(90deg, rgba(255, 176, 136, 0.74), rgba(255, 176, 136, 0));
+      transform: translateY(0.5px);
+    }
+
+    .overline.sage::after {
+      background: linear-gradient(90deg, rgba(200, 228, 208, 0.70), rgba(200, 228, 208, 0));
+    }
+
+    .brand-kicker {
+      color: var(--peach);
+      letter-spacing: 0.12em;
+    }
+
+    .brand-title {
+      margin: 5px 0 0;
+      color: var(--ivory);
+      font-size: 28px;
+      font-weight: 650;
+      letter-spacing: -0.02em;
+      line-height: 1.05;
+    }
+
+    .tabs {
+      display: inline-flex;
+      gap: 4px;
+      padding: 4px;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 999px;
+      background: rgba(26, 26, 27, 0.70);
+      backdrop-filter: blur(10px);
+    }
+
+    .tab {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 32px;
+      border: 0;
+      border-radius: 999px;
+      padding: 0 14px;
+      color: var(--mist-2);
+      background: transparent;
+      font-size: 12px;
+      font-weight: 700;
+      transition: color 180ms ease-out, background 180ms ease-out;
+    }
+
+    .tab.active {
+      color: var(--peach-ink);
+      background: var(--peach);
+    }
+
+    .patient-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 24px;
+      align-items: start;
+    }
+
+    /* polish: Bigger gaps between page sections make the flow read as triage stages, not a stack of widgets. */
+    .left-column,
+    .right-column {
+      display: grid;
+      gap: 24px;
+    }
+
+    .right-column {
+      min-width: 0;
+      overflow: visible;
+      padding-right: 4px;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(255, 176, 136, 0.35) rgba(20, 20, 21, 0.6);
+    }
+
+    .card,
+    .composer,
+    .map-card {
+      border: 1px solid rgba(255, 255, 255, 0.055);
+      background: var(--glass);
+      backdrop-filter: blur(10px);
+    }
+
+    .composer {
+      border-radius: 22px;
+      padding: 18px;
+      background: rgba(40, 40, 42, 0.70);
+    }
+
+    .composer-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .composer-actions {
+      display: flex;
+      flex: 0 0 auto;
+      gap: 8px;
+    }
+
+    .composer input {
+      width: 100%;
+      height: 36px;
+      min-width: 0;
+      border: 0;
+      color: var(--mist-5);
+      background: transparent;
+      font-size: 13px;
+      outline: 0;
+    }
+
+    .composer input::placeholder {
+      color: var(--mist-4);
+    }
+
+    .icon-button,
+    .send-button,
+    .reserve-button,
+    .run-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 0;
+      transition:
+        transform 180ms ease-out,
+        border-color 180ms ease-out,
+        background 180ms ease-out,
+        color 180ms ease-out;
+    }
+
+    .icon-button {
+      width: 34px;
+      height: 34px;
+      border: 1px solid rgba(255, 176, 136, 0.25);
+      border-radius: 999px;
+      color: var(--peach);
+      background: rgba(255, 176, 136, 0.15);
+    }
+
+    .send-button {
+      height: 34px;
+      gap: 7px;
+      border-radius: 12px;
+      padding: 0 13px;
+      color: #FFE4D6;
+      background: var(--peach-ink);
+      font-size: 12px;
+      font-weight: 750;
+    }
+
+    .icon-button:hover,
+    .send-button:hover,
+    .reserve-button:hover,
+    .run-button:hover {
+      transform: translateY(-1px);
+    }
+
+    .composer-meta {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      margin-top: 6px;
+      color: var(--mist-4);
+      font-size: 10.5px;
+    }
+
+    .composer-meta span {
+      min-width: 0;
+    }
+
+    .clinical-note {
+      color: rgba(255, 176, 136, 0.82);
+    }
+
+    .hospital-list {
+      display: grid;
+      gap: 14px;
+    }
+
+    .hospital-card {
+      position: relative;
+      overflow: hidden;
+      border-radius: 22px;
+      transition:
+        transform 180ms ease-out,
+        border-color 180ms ease-out,
+        background 220ms cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    .hospital-card.pad-large {
+      padding: 22px;
+    }
+
+    .hospital-card.pad-medium {
+      padding: 18px;
+    }
+
+    .hospital-card.pad-tight {
+      padding: 16px;
+    }
+
+    .hospital-card:hover {
+      transform: translateY(-2px);
+      border-color: rgba(255, 255, 255, 0.12);
+    }
+
+    .hospital-card.is-lit {
+      border-color: rgba(200, 228, 208, 0.18);
+      box-shadow: 0 12px 30px rgba(135, 168, 120, 0.25);
+    }
+
+    .hospital-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 14px;
+    }
+
+    .hospital-copy {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+
+    /* polish: Card internals use a tighter scale so titles, meta, and live status stop competing equally. */
+    .hospital-title {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 0;
+      color: var(--ivory);
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: -0.015em;
+      line-height: 1.18;
+    }
+
+    .hospital-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      margin-top: 6px;
+      color: var(--mist-2);
+      font-size: 12px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .meta-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .reserve-button {
+      min-height: 38px;
+      flex: 0 0 auto;
+      border-radius: 13px;
+      padding: 0 15px;
+      color: var(--peach-ink);
+      background: var(--peach);
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .trust-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 16px;
+    }
+
+    .trust-pill,
+    .demoted-pill,
+    .live-pill {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      font-weight: 750;
+      white-space: nowrap;
+    }
+
+    .trust-pill {
+      min-width: 0;
+      gap: 8px;
+      min-height: 28px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 0 11px;
+      background: rgba(255, 255, 255, 0.045);
+      color: var(--mist-1);
+      font-size: 12px;
+      line-height: 1;
+      transition:
+        transform 180ms ease-out,
+        border-color 180ms ease-out,
+        background 180ms ease-out;
+    }
+
+    .trust-pill:hover {
+      transform: translateY(-1px);
+      border-color: rgba(255, 255, 255, 0.14);
+    }
+
+    .trust-pill.sage {
+      border-color: rgba(200, 228, 208, 0.20);
+      background: rgba(200, 228, 208, 0.12);
+      color: var(--sage);
+    }
+
+    .trust-pill.peach {
+      border-color: rgba(255, 176, 136, 0.24);
+      background: rgba(255, 176, 136, 0.13);
+      color: var(--peach);
+    }
+
+    .confidence {
+      color: var(--mist-5);
+      font-size: 10px;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -0.01em;
+    }
+
+    .confidence span {
+      color: var(--mist-4);
+    }
+
+    .demoted-pill {
+      gap: 5px;
+      min-height: 22px;
+      border: 1px solid rgba(194, 82, 43, 0.40);
+      padding: 0 8px;
+      color: var(--peach);
+      background: rgba(194, 82, 43, 0.20);
+      font-size: 10px;
+      letter-spacing: 0.10em;
+      text-transform: uppercase;
+    }
+
+    /* polish: Live signals feel physical via a ring expansion, not a louder color. */
+    .live-pill {
+      gap: 8px;
+      margin-top: 8px;
+      border: 1px solid rgba(74, 107, 63, 0.30);
+      padding: 5px 10px;
+      color: var(--sage);
+      background: rgba(74, 107, 63, 0.18);
+      font-size: 11px;
+    }
+
+    .live-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 999px;
+      background: var(--sage);
+      box-shadow: 0 0 0 4px rgba(74, 107, 63, 0.22);
+      animation: live-ring 1.4s ease-in-out infinite;
+    }
+
+    .map-card {
+      min-height: 280px;
+      overflow: hidden;
+      border-radius: 22px;
+      background: #15151A;
+    }
+
+    .map-surface {
+      position: relative;
+      min-height: 280px;
+      padding: 16px;
+      background:
+        radial-gradient(circle at 30% 40%, rgba(255, 176, 136, 0.12), transparent 40%),
+        radial-gradient(circle at 70% 60%, rgba(135, 168, 120, 0.10), transparent 45%),
+        repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.025) 0 1px, transparent 1px 40px),
+        repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.025) 0 1px, transparent 1px 40px);
+    }
+
+    .map-label {
+      position: absolute;
+      left: 16px;
+      top: 16px;
+      color: var(--mist-1);
+    }
+
+    .pin {
+      position: absolute;
+      width: 12px;
+      height: 12px;
+      border-radius: 999px;
+      transform: translate(-50%, -50%);
+    }
+
+    .pin.high {
+      background: var(--sage-mid);
+      box-shadow: 0 0 0 4px rgba(135, 168, 120, 0.30);
+    }
+
+    .pin.ok {
+      background: var(--peach);
+      box-shadow: 0 0 0 4px rgba(255, 176, 136, 0.25);
+    }
+
+    .pin.low {
+      background: var(--peach-deep);
+      box-shadow: 0 0 0 3px rgba(194, 82, 43, 0.30);
+      opacity: 0.86;
+    }
+
+    .legend {
+      position: absolute;
+      left: 12px;
+      bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 999px;
+      padding: 6px 10px;
+      color: var(--mist-1);
+      background: rgba(20, 20, 21, 0.85);
+      font-size: 10px;
+      backdrop-filter: blur(10px);
+    }
+
+    .legend span {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .legend i {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+    }
+
+    .utility-card {
+      border-radius: 22px;
+      padding: 16px;
+    }
+
+    .utility-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 6px;
+    }
+
+    .utility-head > * {
+      min-width: 0;
+    }
+
+    .utility-title {
+      margin: 0;
+      color: var(--ivory);
+      font-size: 14px;
+      font-weight: 750;
+      letter-spacing: -0.01em;
+    }
+
+    .utility-subcopy {
+      margin: 0 0 14px;
+      color: var(--mist-3);
+      font-size: 11.5px;
+      line-height: 1.35;
+    }
+
+    .run-button {
+      gap: 6px;
+      min-height: 26px;
+      border-radius: 10px;
+      padding: 0 10px;
+      color: var(--peach-ink);
+      background: var(--peach);
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    .tile-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    /* polish: Atomic state changes add a 1px expansion so the state reads even in peripheral vision. */
+    .booking-tile {
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 14px;
+      padding: 13px 12px;
+      color: var(--mist-5);
+      background: rgba(40, 40, 42, 0.70);
+      font-size: 12px;
+      font-weight: 800;
+      text-align: center;
+      transition:
+        background 220ms cubic-bezier(0.22, 1, 0.36, 1),
+        border-color 220ms cubic-bezier(0.22, 1, 0.36, 1),
+        box-shadow 220ms cubic-bezier(0.22, 1, 0.36, 1),
+        transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    .booking-tile.success {
+      border-color: rgba(135, 168, 120, 0.42);
+      color: var(--sage);
+      background: rgba(74, 107, 63, 0.20);
+      box-shadow: 0 0 0 1px rgba(135, 168, 120, 0.22);
+    }
+
+    .booking-tile.pending {
+      animation: tile-breathe 1.4s ease-in-out infinite;
+    }
+
+    .reasoning-feed {
+      display: grid;
+      gap: 11px;
+      max-height: 240px;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+
+    .reasoning-row {
+      display: grid;
+      grid-template-columns: 78px minmax(0, 1fr);
+      gap: 10px;
+      color: var(--mist-1);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .agent {
+      color: var(--peach);
+      font-weight: 800;
+    }
+
+    .soft-state {
+      border: 1px dashed rgba(255, 255, 255, 0.08);
+      border-radius: 14px;
+      padding: 11px 12px;
+      color: var(--mist-3);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    /* polish: State copy names the clinical work underway instead of defaulting to generic loading text. */
+    .rollback {
+      margin-top: 12px;
+      border: 1px solid rgba(194, 82, 43, 0.38);
+      border-radius: 14px;
+      padding: 10px 12px;
+      color: var(--peach);
+      background: rgba(194, 82, 43, 0.12);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    @keyframes live-ring {
+      0%,
+      100% {
+        box-shadow: 0 0 0 4px rgba(74, 107, 63, 0.22);
+      }
+      50% {
+        box-shadow: 0 0 0 7px rgba(74, 107, 63, 0.12);
+      }
+    }
+
+    @keyframes tile-breathe {
+      0%,
+      100% {
+        transform: scale(1);
+        box-shadow: 0 0 0 0 rgba(255, 176, 136, 0);
+      }
+      50% {
+        transform: scale(1.015);
+        box-shadow: 0 0 0 1px rgba(255, 176, 136, 0.18);
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      *::before,
+      *::after {
+        animation-duration: 0.001ms !important;
+        animation-iteration-count: 1 !important;
+        scroll-behavior: auto !important;
+        transition-duration: 0.001ms !important;
+      }
+    }
+
+    @media (min-width: 1280px) {
+      .patient-grid {
+        grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+        gap: 16px;
+      }
+
+      .right-column {
+        position: sticky;
+        top: 16px;
+        max-height: calc(100vh - 32px);
+        overflow-y: auto;
+      }
+    }
+
+    @media (max-width: 1279px) {
+      .shell {
+        width: min(1304px, calc(100% - 28px));
+        padding-top: 18px;
+      }
+
+      .right-column {
+        position: static;
+        max-height: none;
+        overflow: visible;
+        padding-right: 0;
+      }
+    }
+
+    @media (max-width: 640px) {
+      .app-header {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .tabs {
+        width: 100%;
+        overflow-x: auto;
+      }
+
+      .tab {
+        flex: 1 0 auto;
+      }
+    }
+
+    @media (max-width: 560px) {
+      .composer-row,
+      .hospital-top {
+        align-items: stretch;
+        flex-direction: column;
+      }
+
+      .composer-row {
+        gap: 8px;
+      }
+
+      .composer-actions {
+        width: 100%;
+        gap: 8px;
+      }
+
+      .icon-button {
+        flex: 0 0 42px;
+        width: 42px;
+      }
+
+      .send-button {
+        flex: 1 1 auto;
+      }
+
+      .reserve-button {
+        width: 100%;
+      }
+
+      .reasoning-row {
+        grid-template-columns: 1fr;
+        gap: 2px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="app-header">
+      <div>
+        <div class="overline brand-kicker">Hackathon demo</div>
+        <h1 class="brand-title">Healthcare Intelligence</h1>
+      </div>
+      <nav class="tabs" aria-label="Demo sections">
+        <button class="tab active" type="button" aria-current="page">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 2v20M2 12h20"></path><path d="M7 7h10v10H7z"></path></svg>
+          Patient
+        </button>
+        <button class="tab" type="button">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 8V4"></path><path d="M8 4h8"></path><path d="M6 9h12v10H6z"></path><path d="M9 13h6"></path></svg>
+          Doctor
+        </button>
+        <button class="tab" type="button">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 20h16"></path><path d="M6 20V8l6-4 6 4v12"></path><path d="M9 20v-6h6v6"></path></svg>
+          NGO
+        </button>
+      </nav>
+    </header>
+
+    <section class="patient-grid" aria-label="Patient recommendation flow">
+      <div class="left-column">
+        <form class="composer">
+          <div class="composer-row">
+            <input value="Chest tightness, age 64, started 30 min ago" aria-label="Triage query">
+            <div class="composer-actions">
+              <button class="icon-button" type="button" aria-label="Start Hindi voice input">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><path d="M12 19v3"></path></svg>
+              </button>
+              <button class="send-button" type="button">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m22 2-7 20-4-9-9-4Z"></path><path d="M22 2 11 13"></path></svg>
+                Send
+              </button>
+            </div>
+          </div>
+          <div class="composer-meta">
+            <span class="clinical-note">Triaging symptoms... verifying capacity, oxygen, formulary, and specialist coverage.</span>
+            <span>48/500</span>
+          </div>
+        </form>
+
+        <div class="hospital-list">
+          <article class="card hospital-card pad-large is-lit">
+            <div class="hospital-top">
+              <div class="hospital-copy">
+                <h2 class="hospital-title">Apollo Emergency, Hyderabad</h2>
+                <div class="hospital-meta">
+                  <span class="meta-item">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 1 1 16 0Z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+                    6.2 km
+                  </span>
+                  <span class="meta-item">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>
+                    17 min
+                  </span>
+                </div>
+                <div class="live-pill"><span class="live-dot" aria-hidden="true"></span>Verified live</div>
+              </div>
+              <button class="reserve-button" type="button">Reserve -&gt;</button>
+            </div>
+            <div class="trust-row" aria-label="Trust signals">
+              <button class="trust-pill sage" type="button">Bed <span class="confidence">0.91 <span>+/- 0.03</span></span></button>
+              <button class="trust-pill peach" type="button">Oxygen <span class="confidence">0.97 <span>+/- 0.02</span></span></button>
+              <button class="trust-pill peach" type="button">Drug <span class="confidence">0.82 <span>+/- 0.05</span></span></button>
+              <button class="trust-pill" type="button">Specialist <span class="confidence">0.88 <span>+/- 0.04</span></span></button>
+            </div>
+          </article>
+
+          <article class="card hospital-card pad-medium">
+            <div class="hospital-top">
+              <div class="hospital-copy">
+                <h2 class="hospital-title">CARE Advanced Trauma, Bengaluru</h2>
+                <div class="hospital-meta">
+                  <span class="meta-item">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 1 1 16 0Z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+                    8.9 km
+                  </span>
+                  <span class="meta-item">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>
+                    22 min
+                  </span>
+                </div>
+                <div class="live-pill"><span class="live-dot" aria-hidden="true"></span>Verified live</div>
+              </div>
+              <button class="reserve-button" type="button">Reserve -&gt;</button>
+            </div>
+            <div class="trust-row" aria-label="Trust signals">
+              <button class="trust-pill sage" type="button">Bed <span class="confidence">0.86 <span>+/- 0.04</span></span></button>
+              <button class="trust-pill peach" type="button">Oxygen <span class="confidence">0.90 <span>+/- 0.03</span></span></button>
+              <button class="trust-pill peach" type="button">Drug <span class="confidence">0.80 <span>+/- 0.06</span></span></button>
+              <button class="trust-pill" type="button">Specialist <span class="confidence">0.92 <span>+/- 0.03</span></span></button>
+            </div>
+          </article>
+
+          <article class="card hospital-card pad-tight">
+            <div class="hospital-top">
+              <div class="hospital-copy">
+                <h2 class="hospital-title">
+                  Fortis Metro Critical Care, Delhi
+                  <span class="demoted-pill">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m12 3 10 18H2L12 3Z"></path><path d="M12 9v4"></path><path d="M12 17h.01"></path></svg>
+                    Demoted
+                  </span>
+                </h2>
+                <div class="hospital-meta">
+                  <span class="meta-item">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 1 1 16 0Z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+                    11.3 km
+                  </span>
+                  <span class="meta-item">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>
+                    26 min
+                  </span>
+                </div>
+              </div>
+              <button class="reserve-button" type="button">Reserve -&gt;</button>
+            </div>
+            <div class="trust-row" aria-label="Trust signals">
+              <button class="trust-pill sage" type="button">Bed <span class="confidence">0.78 <span>+/- 0.07</span></span></button>
+              <button class="trust-pill peach" type="button">Oxygen <span class="confidence">0.95 <span>+/- 0.02</span></span></button>
+              <button class="trust-pill peach" type="button">Drug <span class="confidence">0.89 <span>+/- 0.03</span></span></button>
+              <button class="trust-pill" type="button">Specialist <span class="confidence">0.85 <span>+/- 0.06</span></span></button>
+            </div>
+          </article>
+        </div>
+      </div>
+
+      <aside class="right-column" aria-label="Map, booking, and reasoning">
+        <section class="map-card">
+          <div class="map-surface">
+            <div class="overline map-label">3 hospitals - availability</div>
+            <span class="pin high" style="left: 42%; top: 48%;" aria-label="High availability"></span>
+            <span class="pin high" style="left: 58%; top: 63%;" aria-label="High availability"></span>
+            <span class="pin low" style="left: 64%; top: 34%;" aria-label="Low availability"></span>
+            <span class="pin ok" style="left: 32%; top: 62%;" aria-label="Ok availability"></span>
+            <div class="legend" aria-label="Availability legend">
+              <span><i style="background: #87A878;"></i>High</span>
+              <span><i style="background: #FFB088;"></i>OK</span>
+              <span><i style="background: #C2522B;"></i>Low</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="card utility-card">
+          <div class="utility-head">
+            <div>
+              <div class="overline sage">Atomic booking</div>
+              <h2 class="utility-title">All 4 matched - committed</h2>
+            </div>
+            <button class="run-button" type="button">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true"><path d="M8 5v14l11-7z"></path></svg>
+              Run match
+            </button>
+          </div>
+          <p class="utility-subcopy">Bed, oxygen, drug, and specialist legs committed as a single reservation.</p>
+          <div class="tile-grid">
+            <div class="booking-tile success">Bed</div>
+            <div class="booking-tile success">Oxygen</div>
+            <div class="booking-tile success">Drug</div>
+            <div class="booking-tile pending">Specialist</div>
+          </div>
+          <div class="rollback" role="status">If any leg loses confidence, the reservation rolls back before dispatch.</div>
+        </section>
+
+        <section class="card utility-card">
+          <div class="utility-head">
+            <div class="overline">Why this recommendation</div>
+            <div class="overline sage">Live</div>
+          </div>
+          <div class="reasoning-feed">
+            <div class="reasoning-row">
+              <div class="agent">Routing</div>
+              <div>Apollo is within the fastest stable route band and avoids demoted queue pressure.</div>
+            </div>
+            <div class="reasoning-row">
+              <div class="agent">Risk</div>
+              <div>Oxygen confidence is high and formulary coverage remains above policy reserve floor.</div>
+            </div>
+            <div class="reasoning-row">
+              <div class="agent">Verify</div>
+              <div>Live census and duty roster agree within the current 120-second reconciliation window.</div>
+            </div>
+            <div class="soft-state">Awaiting the next verification tick before changing the ranked list.</div>
+          </div>
+        </section>
+      </aside>
+    </section>
+  </main>
+</body>
+</html>

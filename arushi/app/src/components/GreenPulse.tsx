@@ -1,4 +1,4 @@
-import { motion, useReducedMotion } from "framer-motion";
+import { useReducedMotion } from "framer-motion";
 
 interface GreenPulseProps {
   label?: string;
@@ -24,17 +24,7 @@ export default function GreenPulse({ label = "Verified live", variant = "on-glas
           className="inline-block h-2 w-2 rounded-full bg-cg-sage"
         />
       ) : (
-        <motion.span
-          aria-hidden="true"
-          className="inline-block h-2 w-2 rounded-full bg-cg-sage"
-          initial={{ opacity: 0.6, scale: 1 }}
-          whileInView={{
-            opacity: [0.6, 1, 0.6],
-            scale: [1, 1.25, 1],
-            transition: { duration: 1.6, repeat: Infinity, ease: "easeInOut" },
-          }}
-          viewport={{ once: false, amount: 0.1 }}
-        />
+        <span aria-hidden="true" className="inline-block cg-pulse-dot" />
       )}
       {label}
     </div>

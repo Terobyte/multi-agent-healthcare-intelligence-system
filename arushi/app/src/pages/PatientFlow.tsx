@@ -200,9 +200,9 @@ export default function PatientFlow() {
   }, [runRecommendation]);
 
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-        <div className="space-y-4">
+        <div className="space-y-6">
           <ChatInput onSend={runRecommendation} loading={isLoading} />
           {degraded ? (
             <div className="rounded-cg-tile border border-[rgba(255,176,136,0.30)] bg-[rgba(255,176,136,0.10)] px-4 py-2 text-[12px] text-cg-peach">
@@ -219,7 +219,7 @@ export default function PatientFlow() {
               No hospitals matched this query. Try broader terms.
             </div>
           ) : null}
-          <div className="space-y-3">
+          <div className="space-y-[14px]">
             {hospitals.map((hospital) => (
               <HospitalCard
                 key={hospital.id}
@@ -235,7 +235,7 @@ export default function PatientFlow() {
             list. self-start prevents the grid item from stretching to match
             the left column; max-h + overflow-y-auto keep the panel from ever
             exceeding the viewport so it doesn't block scrolling. */}
-        <div className="space-y-4 xl:sticky xl:top-4 xl:self-start xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto xl:pr-1">
+        <div className="space-y-6 xl:sticky xl:top-4 xl:self-start xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto xl:pr-1">
           <HospitalMap hospitals={hospitals} />
           <AtomicBookingTiles
             state={bookingState}

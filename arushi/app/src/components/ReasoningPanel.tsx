@@ -20,20 +20,22 @@ export default function ReasoningPanel({
   loading?: boolean;
 }) {
   return (
-    <div className="rounded-cg-card-sm border border-white/[0.05] bg-[rgba(20,20,21,0.6)] px-4 py-4 backdrop-blur-cg-glass">
-      <div className="flex items-center justify-between">
-        <div className="text-[10px] font-semibold uppercase tracking-cg-overline text-cg-mist4">
+    <div className="rounded-cg-card border border-white/[0.05] bg-[rgba(20,20,21,0.6)] px-4 py-4 backdrop-blur-cg-glass">
+      <div className="flex items-center justify-between gap-3">
+        <div className="cg-overline-rule text-[10px] font-semibold uppercase tracking-cg-overline text-cg-mist4">
           Why this recommendation
         </div>
-        <div className={`text-[10px] font-semibold uppercase tracking-cg-overline ${loading ? "text-cg-sage" : "text-cg-mist4"}`}>
+        <div className={`cg-overline-rule cg-overline-rule-sage text-[10px] font-semibold uppercase tracking-cg-overline ${loading ? "text-cg-sage" : "text-cg-mist4"}`}>
           {loading ? "live" : "idle"}
         </div>
       </div>
 
-      <div className="mt-3 max-h-[240px] space-y-2 overflow-y-auto pr-1">
+      <div className="mt-3 max-h-[240px] space-y-2.5 overflow-y-auto pr-1">
         {rows.length === 0 ? (
           <div className="rounded-cg-tile border border-dashed border-white/[0.08] px-3 py-3 text-[12px] text-cg-mist3">
-            Ask for placement recommendations to see agent reasoning.
+            {loading
+              ? "Triaging symptoms and waiting for the first agent note."
+              : "Ask for placement recommendations to see agent reasoning."}
           </div>
         ) : null}
 
@@ -43,12 +45,12 @@ export default function ReasoningPanel({
             initial={{ opacity: 0, y: 4 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.22 }}
-            className="flex items-start gap-2.5 text-[12px] leading-[1.5] text-cg-mist1"
+            className="grid grid-cols-[78px_minmax(0,1fr)] items-start gap-2.5 text-[12px] leading-[1.5] text-cg-mist1 max-sm:grid-cols-1 max-sm:gap-0.5"
           >
-            <div className="w-[78px] flex-shrink-0 font-semibold text-cg-peach">
+            <div className="font-semibold text-cg-peach">
               {shortName[row.agent]}
             </div>
-            <div className="flex-1">{row.text}</div>
+            <div className="min-w-0">{row.text}</div>
           </motion.div>
         ))}
       </div>

@@ -92,7 +92,7 @@ export default function HospitalMap({ hospitals }: { hospitals: Hospital[] }) {
           </Marker>
         ))}
       </MapContainer>
-      <div className="pointer-events-none absolute left-4 top-4 text-[10px] font-semibold uppercase tracking-cg-overline text-cg-mist1">
+      <div className="pointer-events-none absolute left-14 top-4 cg-overline-rule text-[10px] font-semibold uppercase tracking-cg-overline text-cg-mist1">
         {cityLabel}
       </div>
       {hospitals.length > 0 ? (

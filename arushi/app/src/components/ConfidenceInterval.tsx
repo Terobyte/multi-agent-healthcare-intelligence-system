@@ -19,7 +19,7 @@ export default function ConfidenceInterval({ score, ci, variant = "on-glass" }: 
   const s = Math.max(0, Math.min(1, sRaw));
   const c = Math.max(0, Math.min(1, cRaw));
   return (
-    <span className="text-[10px] font-semibold">
+    <span className="text-[10px] font-semibold tabular-nums tracking-[-0.01em]">
       {s.toFixed(2)} <span className={muted}>± {c.toFixed(2)}</span>
     </span>
   );
