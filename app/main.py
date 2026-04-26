@@ -160,7 +160,10 @@ async def sse(session_id: str):
     Event vocabulary (contract for ReasoningPanel.tsx):
       triage | extractor | validator | router | transfer | stream_tick | ping | done | error
     Terminal: `event: done` with the final session payload.
-    Heartbeat: `event: ping` every 15s so reverse proxies don't idle-close.
+    Heartbeat: an initial `event: ping` is always emitted; an inter-tick ping
+    fires only when an agent step takes >15s (placeholder cadence completes in
+    ~1s and never triggers). Once real agent calls are wired in, swap to a
+    parallel asyncio.create_task that pings on a wall-clock interval.
     """
     trace_id = str(uuid4())
 
@@ -206,11 +209,22 @@ async def sse_demo(session_id: str):
     text = _DEMO_TRANSCRIPT.read_text()
 
     async def gen():
+        saw_done = False
         for chunk in text.split("\n\n"):
             chunk = chunk.strip()
-            if chunk:
-                yield chunk + "\n\n"
-                await asyncio.sleep(0.25)
+            if not chunk:
+                continue
+            if "event: done" in chunk:
+                saw_done = True
+            yield chunk + "\n\n"
+            await asyncio.sleep(0.25)
+        # Frontend EventSource hangs forever waiting for `done`. If the canned
+        # transcript is malformed (no done frame), surface a synthetic one so
+        # the panel cleanly closes instead of looking frozen.
+        if not saw_done:
+            logger.warning("sse_demo_transcript_missing_done session=%s", session_id)
+            yield 'event: error\ndata: {"code":"demo_transcript_invalid","message":"no done frame"}\n\n'
+            yield f'event: done\ndata: {{"session_id":"{session_id}"}}\n\n'
 
     return StreamingResponse(
         gen(),

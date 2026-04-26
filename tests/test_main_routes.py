@@ -17,7 +17,11 @@ def client_with_key(monkeypatch):
     import app.main as main_module
     importlib.reload(main_module)
     yield TestClient(main_module.app), main_module
-    importlib.reload(main_module)  # restore for sibling tests
+    # Unset DEMO_KEY BEFORE the cleanup reload so the module's DEMO_KEY binding
+    # doesn't keep "test-secret" alive for sibling tests that import app.main.
+    # monkeypatch.undo() unwinds AFTER fixture teardown — too late.
+    monkeypatch.delenv("DEMO_KEY", raising=False)
+    importlib.reload(main_module)
 
 
 def test_book_rejects_without_demo_key(client_with_key, monkeypatch):
@@ -61,6 +65,23 @@ def test_sse_demo_replays_transcript():
     text = body.decode()
     assert "event: triage" in text
     assert "event: done" in text
+
+
+def test_sse_demo_synthesizes_done_when_transcript_lacks_one(monkeypatch, tmp_path):
+    """Malformed transcript (no done frame) must NOT silently leave the panel hanging."""
+    bad = tmp_path / "bad.sse"
+    bad.write_text("event: triage\ndata: {\"agent\":\"triage\",\"token\":\"x\"}\n\n")
+    if "DEMO_KEY" in os.environ:
+        del os.environ["DEMO_KEY"]
+    import app.main as main_module
+    importlib.reload(main_module)
+    monkeypatch.setattr(main_module, "_DEMO_TRANSCRIPT", bad)
+    client = TestClient(main_module.app)
+    with client.stream("GET", "/sse_demo?session_id=t") as r:
+        body = b"".join(r.iter_bytes()).decode()
+    assert "event: triage" in body
+    assert "event: done" in body
+    assert "demo_transcript_invalid" in body
 
 
 def test_book_warehouse_failure_returns_rejected_not_500(client_with_key, monkeypatch):

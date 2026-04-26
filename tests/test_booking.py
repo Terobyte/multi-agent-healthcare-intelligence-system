@@ -137,6 +137,11 @@ def test_all_return_dicts_validate_against_booking_output_schema(monkeypatch):
             [("5603",)] if "gold_trust_final" in q
             else [("existing-txn",)] if "txn_atomic" in q and q.lstrip().startswith("SELECT")
             else None),
+        # COMMITTED happy path — every child MERGE + parent UPDATE succeeds
+        ("5603", "smoke_committed", lambda q, p=None, _retries=1:
+            [("5603",)] if "gold_trust_final" in q
+            else [] if "txn_atomic" in q and q.lstrip().startswith("SELECT")
+            else None),
     ]
     for fac, pat, fake in scenarios:
         monkeypatch.setattr(booking_module, "warehouse_query", fake)
