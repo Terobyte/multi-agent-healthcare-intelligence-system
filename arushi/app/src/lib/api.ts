@@ -2,7 +2,7 @@
 // - VITE_PUBLIC_URL set → call canonical FastAPI (Tero+Mubarak), adapt to legacy UI shape.
 // - VITE_PUBLIC_URL empty → fall back to local JSON mocks (dev / offline demo).
 
-import { api as canonicalApi, HAS_REAL_BACKEND } from "../api";
+import { ApiError, api as canonicalApi, HAS_REAL_BACKEND } from "../api";
 import { adaptHospitals } from "./adapter";
 import type {
   DoctorCopilotData,
@@ -49,7 +49,24 @@ async function mockRecommend(query: string): Promise<RecommendResponse> {
 // surface that synchronously — without it, the banner only appears after the
 // first recommend() round-trips, which is too late for the user.
 let _degraded = false;
+// Auth misconfig is a separate signal — distinct from a flaky network — so the
+// UI can render "check VITE_DEMO_KEY" instead of "running on cached data".
+// Mock fallback would mask a 401/403 and lose hours of debug time at the demo.
+let _authError = false;
 export const isDegraded = () => _degraded || !HAS_REAL_BACKEND;
+export const hasAuthError = () => _authError;
+
+// crypto.randomUUID is available in modern browsers + Node 19+. The fallback
+// only runs in test rigs / older runtimes — Date.now() alone collides on
+// rapid double-clicks, hence the random suffix.
+function newPatientId(hospitalId: string): string {
+  const lower = hospitalId.toLowerCase();
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return `demo_${lower}_${crypto.randomUUID().slice(0, 8)}`;
+  }
+  const suffix = `${Date.now()}${Math.random().toString(36).slice(2, 8)}`;
+  return `demo_${lower}_${suffix}`;
+}
 
 export async function recommend(request: RecommendRequest): Promise<RecommendResponse> {
   const query = request.query.trim();
@@ -65,8 +82,33 @@ export async function recommend(request: RecommendRequest): Promise<RecommendRes
     try {
       const resp = await canonicalApi.recommend(query);
       _degraded = false;
-      return { hospitals: adaptHospitals(resp.hospitals) };
+      _authError = false;
+      let hospitals: Hospital[];
+      try {
+        hospitals = adaptHospitals(resp.hospitals);
+      } catch (adaptErr) {
+        // Real backend reachable but returned data we can't reshape — this is
+        // a contract bug (schema drift), not a network outage. Surface it loudly
+        // instead of pretending mocks are fine.
+        _degraded = true;
+        // eslint-disable-next-line no-console
+        console.error("[api] /recommend returned data adapter could not parse:", adaptErr);
+        throw new Error("backend returned invalid hospital data");
+      }
+      return { hospitals };
     } catch (err) {
+      // 401/403 → auth misconfig. Falling back to mocks would silently hide
+      // the broken X-Demo-Key during the demo. Rethrow so the boundary catches it.
+      if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+        _authError = true;
+        _degraded = true;
+        throw err;
+      }
+      // Backend reachable but body wasn't JSON — schema drift, surface it.
+      if (err instanceof ApiError && err.parse) {
+        _degraded = true;
+        throw err;
+      }
       _degraded = true;
       // eslint-disable-next-line no-console
       console.warn("[api] /recommend failed, falling back to mocks:", err);
@@ -82,19 +124,29 @@ export async function recommend(request: RecommendRequest): Promise<RecommendRes
 
 export async function reserve(request: ReserveRequest): Promise<ReserveResponse> {
   if (HAS_REAL_BACKEND) {
-    const patient_id = `demo_${request.hospitalId.toLowerCase()}_${Date.now().toString().slice(-6)}`;
+    const patient_id = newPatientId(request.hospitalId);
     // Let real failures propagate — UI shows the rollback animation + banner.
     // Lying about success here would let the stage demo pass while production
     // saga rolled back, which is much worse than an honest red tile.
     const out = await canonicalApi.book(request.hospitalId, patient_id);
     _degraded = false;
+    _authError = false;
+    const committed = out.status === "COMMITTED";
+    // When the saga did NOT commit, surface a `null` referenceId so the UI
+    // never renders a fabricated "RSV-{id}-FAILED" string as a real reservation
+    // code. The errorReason field carries the human-friendly summary.
+    const errorReason = committed
+      ? null
+      : out.reason ?? out.commit_error ?? `Reservation ${out.status.toLowerCase()}`;
     return {
-      success: out.status === "COMMITTED",
-      referenceId: out.transaction_id ?? `RSV-${request.hospitalId}-FAILED`,
+      success: committed,
+      referenceId: committed ? out.transaction_id ?? null : null,
       status: out.status,
       reason: out.reason,
-      commit_error: out.commit_error,
+      // Normalize undefined → null so consumers can `?? "—"` cleanly.
+      commit_error: out.commit_error ?? null,
       transaction_id: out.transaction_id,
+      errorReason,
     };
   }
 
@@ -102,6 +154,8 @@ export async function reserve(request: ReserveRequest): Promise<ReserveResponse>
   return {
     success: true,
     referenceId: `RSV-${request.hospitalId.toUpperCase()}-${Date.now().toString().slice(-6)}`,
+    commit_error: null,
+    errorReason: null,
   };
 }
 

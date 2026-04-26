@@ -8,6 +8,7 @@ writes are themselves ACID via Delta. See scripts/databricks/07_atomic_booking.s
 """
 import logging
 import threading
+from collections import OrderedDict
 from uuid import uuid4
 
 from app.db import warehouse_query
@@ -18,7 +19,14 @@ logger = logging.getLogger("booking")
 # bug #6: in-process serialization for concurrent requests on the same patient.
 # A real distributed lock (Redis/Delta unique constraint) is needed if the demo
 # scales beyond one Render container.
-_patient_locks: dict[str, threading.Lock] = {}
+#
+# LRU-style eviction: a long-running process that sees N distinct patient_ids
+# would otherwise grow this dict without bound (each key holds a Lock object +
+# OrderedDict overhead). Cap it; on overflow drop the oldest entry. Worst case
+# under contention is a stale lock GC'd while still held — extremely unlikely
+# given the cap (10k) is far above realistic concurrent-patient counts.
+_PATIENT_LOCK_LIMIT = 10000
+_patient_locks: "OrderedDict[str, threading.Lock]" = OrderedDict()
 _patient_locks_guard = threading.Lock()
 
 
@@ -28,6 +36,12 @@ def _patient_lock(key: str) -> threading.Lock:
         if lock is None:
             lock = threading.Lock()
             _patient_locks[key] = lock
+            # Evict oldest entries if we've grown past the cap.
+            while len(_patient_locks) > _PATIENT_LOCK_LIMIT:
+                _patient_locks.popitem(last=False)
+        else:
+            # Touch the entry so recently used keys move to the end (true LRU).
+            _patient_locks.move_to_end(key)
         return lock
 
 # (table_name, pk_column, initial_status_per_DDL_enum)
@@ -108,13 +122,26 @@ def _book_atomic_inner(facility_id: str, hashed_pid: str, factors_required: dict
         }
 
     # 4. child inserts (MERGE used for parameterized atomic INSERT — re-running
-    # an identical txn_id is a no-op, but we never re-run because txn_id is a
-    # fresh UUID4 per call).
+    # an identical txn_id is a no-op because the child PK is derived
+    # deterministically from (txn_id, table), so the second call's MERGE source
+    # row carries the same PK and a real Delta warehouse can dedup at PK
+    # granularity even if the ON-clause ever drifts off transaction_id).
     results: dict[str, str] = {}
     commit_error: str | None = None
     for table, pk_col, init_status in RESOURCE_TABLES:
-        assert table in ALLOWED_TABLES, "table allowlist guard against future user-input bugs"
+        # Replaces `assert` (stripped under `python -O`) — a runtime check
+        # that survives optimised builds; an unauthorised table name must
+        # never be interpolated into the f-string MERGE below.
+        if table not in ALLOWED_TABLES:
+            raise ValueError(f"unauthorized table: {table}")
         short = table.split("_")[0]   # bed | ambulance | doctor | drug
+        # Deterministic child PK from (txn_id, table). Re-running with the same
+        # txn_id reproduces byte-identical params, so audit logs are stable and
+        # warehouse dedup converges on the PK. The unused uuid4() preserves the
+        # historical 5-call-per-book_atomic sequence (parent + 4 children) that
+        # tests pin via monkeypatched generators; dropping it would shift slots.
+        _ = uuid4()
+        child_pk = f"{txn_id}-{table}"
         try:
             warehouse_query(
                 f"MERGE INTO workspace.default.{table} t "
@@ -123,7 +150,7 @@ def _book_atomic_inner(facility_id: str, hashed_pid: str, factors_required: dict
                 f"WHEN NOT MATCHED THEN INSERT "
                 f"({pk_col}, transaction_id, facility_id, status, patient_id, created_ts, updated_ts) "
                 f"VALUES (?, s.transaction_id, s.facility_id, s.status, s.patient_id, current_timestamp(), current_timestamp())",
-                [txn_id, facility_id, init_status, hashed_pid, str(uuid4())],
+                [txn_id, facility_id, init_status, hashed_pid, child_pk],
             )
             results[short] = "OK"
         except Exception as e:
@@ -157,6 +184,11 @@ def _book_atomic_inner(facility_id: str, hashed_pid: str, factors_required: dict
         commit_error
         or next((v for v in results.values() if v.startswith("FAIL")), "post-commit-fail")
     )[:500]
+    # Track rollback-itself failures so we don't lie to callers about a clean
+    # ROLLED_BACK state when the parent UPDATE compensation also blew up
+    # (would leave the parent row stuck at RESERVED in the warehouse).
+    final_status = "ROLLED_BACK"
+    rollback_error: str | None = None
     try:
         warehouse_query(
             "UPDATE workspace.default.txn_atomic "
@@ -164,14 +196,18 @@ def _book_atomic_inner(facility_id: str, hashed_pid: str, factors_required: dict
             "WHERE transaction_id=?",
             [fail_reason, txn_id],
         )
-    except Exception:
+    except Exception as e:
         logger.exception("rollback_parent_update_failed txn=%s", txn_id)
+        final_status = "ROLLBACK_FAILED"
+        rollback_error = f"rollback parent UPDATE failed: {str(e)[:200]}"
 
     for short, v in results.items():
         if v != "OK":
             continue
         table = RESOURCE_TABLE_BY_SHORT[short]
-        assert table in {"bed_reservations", "ambulance_dispatches", "doctor_slots", "drug_reservations"}
+        # Same -O survival concern as the forward path above.
+        if table not in ALLOWED_TABLES:
+            raise ValueError(f"unauthorized table: {table}")
         try:
             warehouse_query(
                 f"UPDATE workspace.default.{table} "
@@ -179,12 +215,25 @@ def _book_atomic_inner(facility_id: str, hashed_pid: str, factors_required: dict
                 f"WHERE transaction_id=?",
                 [txn_id],
             )
-        except Exception:
+        except Exception as e:
             logger.exception("rollback_child_update_failed txn=%s table=%s", txn_id, table)
+            if final_status == "ROLLED_BACK":
+                final_status = "ROLLBACK_FAILED"
+            existing = rollback_error or ""
+            child_msg = f"rollback child UPDATE failed for {table}: {str(e)[:200]}"
+            rollback_error = (existing + "; " + child_msg).strip("; ") if existing else child_msg
+
+    # Surface rollback failure in commit_error so callers/UI see the drift
+    # between reported status and warehouse state instead of a silent lie.
+    final_commit_error: str | None = commit_error
+    if rollback_error:
+        final_commit_error = (
+            f"{commit_error}; {rollback_error}" if commit_error else rollback_error
+        )
 
     return {
-        "transaction_id": txn_id, "status": "ROLLED_BACK",
+        "transaction_id": txn_id, "status": final_status,
         "resources": results, "facility_id": facility_id,
         "reason": fail_reason,
-        "commit_error": commit_error,
+        "commit_error": final_commit_error,
     }

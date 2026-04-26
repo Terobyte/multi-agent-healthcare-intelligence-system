@@ -46,13 +46,20 @@ export interface ReserveRequest {
 
 export interface ReserveResponse {
   success: boolean;
-  referenceId: string;
+  // Null when status !== "COMMITTED" — UI must NOT render a fabricated
+  // "RSV-...-FAILED" string as a real reservation code.
+  referenceId: string | null;
   // Forwarded from canonical backend so the UI can show the real failure cause
   // (e.g. "duplicate active transaction") instead of a generic rollback string.
   status?: string;
-  reason?: string;
-  commit_error?: string | null;
+  reason?: string | null;
+  // Required-but-nullable so consumers always read `null` (not `undefined`)
+  // when the saga committed cleanly — easier to render with `?? "—"`.
+  commit_error: string | null;
   transaction_id?: string | null;
+  // Caller-facing error summary when the booking did not commit. Distinct from
+  // `reason` (raw backend code) — meant for direct display in a toast/banner.
+  errorReason?: string | null;
 }
 
 export interface ReasoningMessage {

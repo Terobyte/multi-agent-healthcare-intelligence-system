@@ -10,7 +10,7 @@ sql = sys.argv[1] if len(sys.argv) > 1 else sys.stdin.read()
 payload = json.dumps({"statement": sql, "warehouse_id": WH, "wait_timeout": "50s"})
 r = subprocess.run(
     ["databricks", "api", "post", "-p", PROFILE, "/api/2.0/sql/statements", "--json", payload],
-    capture_output=True, text=True
+    capture_output=True, text=True, timeout=60
 )
 try:
     d = json.loads(r.stdout)

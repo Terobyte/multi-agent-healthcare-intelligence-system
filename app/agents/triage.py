@@ -28,6 +28,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import AsyncIterator
 
+import httpx
 import mlflow.deployments
 
 from app.agents.reasoning_stream import stream_endpoint
@@ -139,7 +140,14 @@ _SYSTEM_PROMPT = (
 
 @lru_cache(maxsize=1)
 def _fm_client():
-    """Cached mlflow.deployments client — re-auth is expensive; share across calls."""
+    """Cached mlflow.deployments client — re-auth is expensive; share across calls.
+
+    Thread-safety: CPython's functools.lru_cache wraps the underlying call in a
+    C-level lock (`RLock`), so concurrent first-time callers will not race to
+    construct duplicate clients — exactly one `get_deploy_client("databricks")`
+    is invoked, and every other caller blocks until the cached value is ready.
+    No additional `threading.Lock()` is required here.
+    """
     return mlflow.deployments.get_deploy_client("databricks")
 
 
@@ -293,10 +301,15 @@ def triage(symptoms: str, language: str = "en") -> TriageOutput:
         data = json.loads(raw)
         # Pydantic validates field types and range constraints (urgency 1-5, etc.)
         return _apply_overrides(raw_symptoms, TriageOutput(**data))
-    except Exception:
+    except (concurrent.futures.TimeoutError, json.JSONDecodeError, ValueError, RuntimeError, KeyError) as e:
+        # Narrow the catch — bare `except Exception` was masking
+        # `asyncio.CancelledError` and similar BaseException-adjacent signals
+        # that must propagate (worker shutdown, SIGINT). Pydantic ValidationError
+        # is a ValueError subclass, so it's covered. KeyError handles the
+        # `resp["choices"][0]…` path when an upstream returns a non-OpenAI shape.
         logger.exception(
-            "triage_llm_failed symptoms=%s — using keyword fallback",
-            _redact_symptoms(raw_symptoms),
+            "triage_llm_failed symptoms=%s err=%s — using keyword fallback",
+            _redact_symptoms(raw_symptoms), type(e).__name__,
         )
         return _apply_overrides(raw_symptoms, _keyword_triage(raw_symptoms))
 
@@ -339,6 +352,12 @@ async def async_triage_stream(symptoms: str, language: str = "en") -> AsyncItera
             except (KeyError, json.JSONDecodeError):
                 # Partial chunk or non-content frame — skip silently
                 continue
-    except Exception:
-        logger.exception("triage_stream_failed symptoms=%s", _redact_symptoms(raw_symptoms))
+    except (httpx.HTTPError, json.JSONDecodeError, ValueError, RuntimeError) as e:
+        # Narrow the catch — must NOT swallow asyncio.CancelledError or
+        # GeneratorExit, both of which signal that the SSE consumer disconnected
+        # and the upstream stream needs to unwind cleanly.
+        logger.exception(
+            "triage_stream_failed symptoms=%s err=%s",
+            _redact_symptoms(raw_symptoms), type(e).__name__,
+        )
         yield "[triage stream error — see server logs]"

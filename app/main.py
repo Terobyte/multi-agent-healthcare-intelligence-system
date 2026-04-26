@@ -12,11 +12,12 @@ from typing import Optional
 from uuid import uuid4
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from fastapi.responses import StreamingResponse, JSONResponse
+from pydantic import BaseModel, Field
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
+from starlette.middleware.base import BaseHTTPMiddleware
 from app.agents.booking import book_atomic
 from app.agents.triage import triage as _triage_agent
 from app.schemas import BookingOutput, ReasoningPanelEvent, TriageOutput
@@ -98,18 +99,66 @@ for _name in ("app", "booking"):
 logger = logging.getLogger("app.main")
 
 app = FastAPI(title="AarogyaNet")
+
+# CORS: env-driven allowlist (comma-separated). Default "*" preserves the demo
+# UX, but production sets CORS_ORIGINS to a specific origin so the public Render
+# URL can't be hit by arbitrary third parties carrying X-Demo-Key in a browser.
+_CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_CORS_ORIGINS or ["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# Hard cap request body size at 64 KB. Triage prompts + booking JSON fit easily
+# inside this; anything larger is either misconfig or a memory-exhaustion probe.
+# We reject pre-read via Content-Length so a 10 GB upload never hits the worker.
+MAX_REQUEST_BYTES = 64 * 1024
+
+
+class _BodySizeLimitMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        cl = request.headers.get("content-length")
+        if cl is not None:
+            try:
+                if int(cl) > MAX_REQUEST_BYTES:
+                    return JSONResponse(
+                        status_code=413,
+                        content={"detail": f"request body exceeds {MAX_REQUEST_BYTES} bytes"},
+                    )
+            except ValueError:
+                # Malformed Content-Length — treat as suspicious, refuse.
+                return JSONResponse(status_code=400, content={"detail": "invalid Content-Length"})
+        return await call_next(request)
+
+
+app.add_middleware(_BodySizeLimitMiddleware)
 
 # Demo-stage protection for mutating endpoints. Public Render URL otherwise lets
 # any audience member POST /book and dirty the trust calibration mid-pitch.
 DEMO_KEY = os.getenv("DEMO_KEY", "")
 DEV_MODE = os.getenv("AAROGYANET_DEV") == "1"
-limiter = Limiter(key_func=get_remote_address)
+
+
+def _client_key(request: Request) -> str:
+    """Rate-limit key that survives Render's reverse proxy.
+
+    `get_remote_address` returns the proxy IP when X-Forwarded-For is present —
+    that collapses every Render user onto a single bucket and makes the limit
+    trivially DoS-able. Read the first XFF entry instead, fall back to the
+    direct peer address only if XFF is absent or empty.
+    """
+    xff = request.headers.get("x-forwarded-for", "")
+    if xff:
+        first = xff.split(",")[0].strip()
+        if first:
+            return first
+    return get_remote_address(request)
+
+
+limiter = Limiter(key_func=_client_key)
 app.state.limiter = limiter
 # Default 500 → 429 with a usable Retry-After header.
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
@@ -188,8 +237,8 @@ async def health():
 
 
 class BookRequest(BaseModel):
-    facility_id: str
-    patient_id: str
+    facility_id: str = Field(max_length=64)
+    patient_id: str = Field(max_length=64)
 
 
 @app.post("/book", response_model=BookingOutput, dependencies=[Depends(require_demo_key)])
@@ -204,7 +253,6 @@ async def _scrubbed_500(request: Request, exc: Exception):
     # 5xx so monitoring sees them — the prior try/except returning 200/REJECTED
     # masked outages. The LogRecord factory above scrubs Bearer/dapi tokens out
     # of logs; this handler scrubs them out of the JSON response body too.
-    from fastapi.responses import JSONResponse
     logger.exception("unhandled_exception path=%s", request.url.path)
     return JSONResponse(status_code=500, content={"detail": "internal error"})
 
@@ -314,7 +362,10 @@ async def sse_demo(session_id: str):
             yield 'event: error\ndata: {"code":"transcript_not_recorded","message":"demo transcript missing"}\n\n'
             yield f'event: done\ndata: {{"session_id":"{session_id}"}}\n\n'
             return
-        text = _DEMO_TRANSCRIPT.read_text()
+        # Off-load disk I/O so a slow filesystem (Render's container layer can
+        # stall on cold reads) doesn't block the FastAPI event loop while the
+        # transcript is loaded.
+        text = await asyncio.to_thread(_DEMO_TRANSCRIPT.read_text)
         saw_done = False
         for chunk in text.split("\n\n"):
             chunk = chunk.strip()
@@ -337,8 +388,8 @@ async def sse_demo(session_id: str):
 
 
 class TriageRequest(BaseModel):
-    user_text: str
-    language: str = "en"
+    user_text: str = Field(max_length=4000)
+    language: str = Field(default="en", max_length=8)
 
 
 @app.post("/triage", response_model=TriageOutput)

@@ -21,7 +21,7 @@ GREEN = "\033[1;32m"; RED = "\033[1;31m"; DIM = "\033[2m"; END = "\033[0m"
 def sql(stmt):
     payload = json.dumps({"statement": stmt, "warehouse_id": WH, "wait_timeout": "50s"})
     r = subprocess.run(["databricks","api","post","-p",PROFILE,"/api/2.0/sql/statements","--json",payload],
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, timeout=60)
     if r.returncode != 0:
         sys.exit(f"CLI error: {r.stderr or r.stdout}")
     d = json.loads(r.stdout)

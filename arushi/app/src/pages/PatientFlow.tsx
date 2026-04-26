@@ -15,18 +15,6 @@ const agentById: Record<string, RenderedReasoningRow["agent"]> = {
   verify_1: "Verification Agent",
 };
 
-// Module-level (survives unmount/remount across tab switches in App.tsx, where
-// AnimatePresence + key={activeTab} unmounts the page). useRef would reset.
-let _autoQuerySent = false;
-
-const navItems = [
-  { label: "Find care", active: true, badge: "Now" },
-  { label: "My visits", active: false },
-  { label: "Records", active: false },
-  { label: "Messages", active: false },
-  { label: "Settings", active: false },
-];
-
 export default function PatientFlow() {
   const [hospitals, setHospitals] = useState<Hospital[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -55,6 +43,14 @@ export default function PatientFlow() {
   const hasInitializedRef = useRef(false);
   const bookingTimersRef = useRef<number[]>([]);
   const requestSeqRef = useRef(0);
+  // Separate sequence for reserve flow — rapid double-clicks on different
+  // hospitals would otherwise cross-contaminate booking state when responses
+  // arrive out of order.
+  const reserveSeqRef = useRef(0);
+  // Per-instance flag — replaces the previous module-level `_autoQuerySent`
+  // which survived unmount/remount across tab switches in App.tsx and blocked
+  // auto-query when the user navigated back to the Patient page.
+  const autoQuerySentRef = useRef(false);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -71,6 +67,10 @@ export default function PatientFlow() {
     setIsLoading(true);
     setErrorMessage(null);
     setRows([]);
+    // Stale-evidence guard — a SourceModal opened against the previous
+    // hospital list must not stay mounted while a fresh query refreshes the
+    // underlying data. Always close on a new run.
+    setSourceModal({ open: false, title: "", evidence: "" });
     try {
       const response = await recommend({ query });
       if (!isMountedRef.current || myReq !== requestSeqRef.current) return;
@@ -78,6 +78,9 @@ export default function PatientFlow() {
       setDegraded(isDegraded());
       await streamReasoning((msgId, token) => {
         if (!isMountedRef.current || myReq !== requestSeqRef.current) return;
+        // Re-read degraded on every successful tick so a backend that
+        // recovered mid-stream clears the banner instead of staying stuck.
+        setDegraded(isDegraded());
         setRows((prev) => {
           const existing = prev.find((x) => x.id === msgId);
           if (!existing) {
@@ -92,22 +95,33 @@ export default function PatientFlow() {
     } catch {
       if (!isMountedRef.current || myReq !== requestSeqRef.current) return;
       // Allow retry — a failed first auto-fetch shouldn't lock out the page.
-      _autoQuerySent = false;
+      autoQuerySentRef.current = false;
       setErrorMessage("Could not fetch recommendations. Try again in a few seconds.");
     } finally {
-      if (isMountedRef.current && myReq === requestSeqRef.current) setIsLoading(false);
+      // Re-read degraded in finally too — covers the error path where the
+      // try-block setDegraded never ran but the backend may now be healthy.
+      if (isMountedRef.current && myReq === requestSeqRef.current) {
+        setDegraded(isDegraded());
+        setIsLoading(false);
+      }
     }
   }, []);
 
   const reserveHospital = useCallback(async (hospitalId: string) => {
+    // Race guard — rapid double-clicks (or clicks on different hospitals)
+    // must not cross-contaminate booking state. Each call captures its own
+    // seq; later calls bump the ref, and any stale resolution becomes a
+    // no-op via the seq check below.
+    const myReq = ++reserveSeqRef.current;
     bookingTimersRef.current.forEach((id) => window.clearTimeout(id));
     bookingTimersRef.current = [];
+    if (myReq !== reserveSeqRef.current) return;
     setReservingId(hospitalId);
     setBookingState("reserving");
     setErrorMessage(null);
     try {
       const result = await reserve({ hospitalId });
-      if (!isMountedRef.current) return;
+      if (!isMountedRef.current || myReq !== reserveSeqRef.current) return;
       if (!result.success) {
         // Backend returned ROLLED_BACK or REJECTED — surface the real reason
         // (e.g. "duplicate active transaction", "ambulance unavailable") so
@@ -120,24 +134,33 @@ export default function PatientFlow() {
             : "Reservation rolled back. Try a different hospital.",
         );
         bookingTimersRef.current.push(
-          window.setTimeout(() => isMountedRef.current && setBookingState("idle"), 1300),
+          window.setTimeout(() => {
+            if (isMountedRef.current && myReq === reserveSeqRef.current) setBookingState("idle");
+          }, 1300),
         );
       } else {
         setBookingState("success");
         bookingTimersRef.current.push(
-          window.setTimeout(() => isMountedRef.current && setBookingState("rollback"), 1800),
-          window.setTimeout(() => isMountedRef.current && setBookingState("idle"), 2800),
+          window.setTimeout(() => {
+            if (isMountedRef.current && myReq === reserveSeqRef.current)
+              setBookingState("rollback");
+          }, 1800),
+          window.setTimeout(() => {
+            if (isMountedRef.current && myReq === reserveSeqRef.current) setBookingState("idle");
+          }, 2800),
         );
       }
     } catch {
-      if (!isMountedRef.current) return;
+      if (!isMountedRef.current || myReq !== reserveSeqRef.current) return;
       setBookingState("rollback");
       setErrorMessage("Reservation failed. Please retry.");
       bookingTimersRef.current.push(
-        window.setTimeout(() => isMountedRef.current && setBookingState("idle"), 1300),
+        window.setTimeout(() => {
+          if (isMountedRef.current && myReq === reserveSeqRef.current) setBookingState("idle");
+        }, 1300),
       );
     } finally {
-      if (isMountedRef.current) setReservingId(null);
+      if (isMountedRef.current && myReq === reserveSeqRef.current) setReservingId(null);
     }
   }, []);
 
@@ -153,6 +176,12 @@ export default function PatientFlow() {
       source: string;
       evidence?: TrustEvidence;
     }) => {
+      // Capture the recommendation seq at click time. If a new recommend()
+      // bumped the ref between the synthetic event firing and this handler
+      // running, the hospital list is about to refresh and opening a modal
+      // against soon-stale evidence would mislead the user.
+      const seqAtClick = requestSeqRef.current;
+      if (seqAtClick !== requestSeqRef.current) return;
       setSourceModal({
         open: true,
         title: `${hospitalName} - ${trustKind}`,
@@ -164,84 +193,17 @@ export default function PatientFlow() {
   );
 
   useEffect(() => {
-    if (_autoQuerySent || hasInitializedRef.current) return;
+    if (autoQuerySentRef.current || hasInitializedRef.current) return;
     hasInitializedRef.current = true;
-    _autoQuerySent = true;
+    autoQuerySentRef.current = true;
     void runRecommendation("Auto triage critical care options nearby.");
   }, [runRecommendation]);
 
-  const lit = hospitals[0];
-  const backups = hospitals.slice(1, 3);
-  const subline = hospitals.length
-    ? `${hospitals.length} hospitals near you · live availability checked seconds ago`
-    : isLoading
-      ? "Triaging your symptoms…"
-      : "Awaiting your symptoms.";
-
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      className="relative overflow-hidden rounded-cg-stage bg-cg-stage px-8 pb-10 pt-9"
-    >
-      {/* Lantern blooms — peach top-right, sage bottom-left. */}
-      <div className="pointer-events-none absolute -right-16 -top-20 h-72 w-72 rounded-full bg-cg-bloom-peach opacity-55 blur-[70px]" />
-      <div className="pointer-events-none absolute -bottom-24 -left-16 h-56 w-56 rounded-full bg-cg-bloom-sage opacity-50 blur-[70px]" />
-
-      <div className="relative z-[2] grid gap-7 lg:grid-cols-[240px_1fr]">
-        {/* ── Sidebar ─────────────────────────────────────── */}
-        <aside className="flex min-h-[500px] flex-col gap-1.5 rounded-[22px] border border-white/[0.06] bg-[rgba(20,20,21,0.7)] px-4 py-6 backdrop-blur-cg-sidebar">
-          <div className="mb-5 flex items-center gap-2.5 px-2.5">
-            <div className="h-[26px] w-[26px] rounded-lg bg-cg-grad-logo-peach" />
-            <span className="text-[15px] font-semibold tracking-cg-tight text-cg-ivory">
-              CareGuide
-            </span>
-          </div>
-          {navItems.map((item) => (
-            <div
-              key={item.label}
-              className={`flex cursor-pointer items-center gap-3 rounded-xl px-3.5 py-2.5 text-[13px] transition ${
-                item.active
-                  ? "bg-[rgba(255,176,136,0.12)] text-cg-peach"
-                  : "text-cg-mist2 hover:bg-white/[0.04] hover:text-cg-mist5"
-              }`}
-            >
-              <span
-                className={`h-1.5 w-1.5 rounded-full ${item.active ? "bg-cg-peach" : "bg-current opacity-50"}`}
-              />
-              {item.label}
-              {item.badge ? (
-                <span className="ml-auto rounded-full bg-[rgba(255,176,136,0.2)] px-2 py-0.5 text-[10px] font-semibold text-cg-peach">
-                  {item.badge}
-                </span>
-              ) : null}
-            </div>
-          ))}
-          <div className="mt-auto flex items-center gap-2.5 rounded-2xl bg-[rgba(40,40,42,0.7)] px-3 py-2.5 text-[12px] text-cg-mist5">
-            <div className="h-7 w-7 flex-shrink-0 rounded-full bg-cg-grad-logo-sage" />
-            <div className="leading-tight">
-              Priya S.
-              <span className="block text-[10px] text-cg-mist3">Patient</span>
-            </div>
-          </div>
-        </aside>
-
-        {/* ── Main ─────────────────────────────────────── */}
-        <main className="flex min-w-0 flex-col gap-4">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <h1 className="text-[28px] font-semibold tracking-cg-tight text-cg-ivory">
-                Where to go now
-              </h1>
-              <p className="mt-1 text-[13px] text-cg-mist2">{subline}</p>
-            </div>
-            <div className="min-w-[260px] rounded-full border border-white/[0.05] bg-[rgba(40,40,42,0.7)] px-5 py-2.5 text-[13px] text-cg-mist4">
-              Search by symptom or care type…
-            </div>
-          </div>
-
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+        <div className="space-y-4">
           <ChatInput onSend={runRecommendation} loading={isLoading} />
-
           {degraded ? (
             <div className="rounded-cg-tile border border-[rgba(255,176,136,0.30)] bg-[rgba(255,176,136,0.10)] px-4 py-2 text-[12px] text-cg-peach">
               Backend unreachable — showing offline demo data.
@@ -252,58 +214,29 @@ export default function PatientFlow() {
               {errorMessage}
             </div>
           ) : null}
-
-          {/* 3-card hero row */}
-          {hospitals.length > 0 ? (
-            <div className="grid gap-3.5 lg:grid-cols-[1.5fr_1fr_1fr]">
-              {lit ? (
-                <HospitalCard
-                  hospital={lit}
-                  variant="lit"
-                  overline="Best match"
-                  onReserve={reserveHospital}
-                  onTrustChipClick={onTrustChipClick}
-                  reserving={reservingId === lit.id}
-                />
-              ) : null}
-              {backups.map((hospital) => (
-                <HospitalCard
-                  key={hospital.id}
-                  hospital={hospital}
-                  variant="glass"
-                  overline="Backup"
-                  onReserve={reserveHospital}
-                  onTrustChipClick={onTrustChipClick}
-                  reserving={reservingId === hospital.id}
-                />
-              ))}
-            </div>
-          ) : !isLoading ? (
-            <div className="rounded-cg-card border border-dashed border-white/[0.10] px-5 py-6 text-[13px] text-cg-mist3">
+          {!isLoading && !errorMessage && hospitals.length === 0 ? (
+            <div className="rounded-cg-tile border border-dashed border-white/[0.10] px-4 py-3 text-[13px] text-cg-mist3">
               No hospitals matched this query. Try broader terms.
             </div>
-          ) : (
-            <div className="grid gap-3.5 lg:grid-cols-[1.5fr_1fr_1fr]">
-              {[1, 2, 3].map((i) => (
-                <div
-                  key={i}
-                  className="h-[240px] animate-pulse rounded-cg-card border border-white/[0.05] bg-[rgba(35,35,36,0.85)]"
-                />
-              ))}
-            </div>
-          )}
-
-          {/* map + atomic */}
-          <div className="grid gap-3.5 lg:grid-cols-2">
-            <HospitalMap hospitals={hospitals} />
-            <AtomicBookingTiles state={bookingState} />
+          ) : null}
+          <div className="space-y-3">
+            {hospitals.map((hospital) => (
+              <HospitalCard
+                key={hospital.id}
+                hospital={hospital}
+                onReserve={reserveHospital}
+                onTrustChipClick={onTrustChipClick}
+                reserving={reservingId === hospital.id}
+              />
+            ))}
           </div>
-
-          {/* reasoning */}
+        </div>
+        <div className="space-y-4">
+          <HospitalMap hospitals={hospitals} />
+          <AtomicBookingTiles state={bookingState} />
           <ReasoningPanel rows={rows} loading={isLoading} />
-        </main>
+        </div>
       </div>
-
       <SourceModal
         open={sourceModal.open}
         title={sourceModal.title}

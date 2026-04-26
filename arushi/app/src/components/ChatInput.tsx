@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import { Mic, MicOff, SendHorizontal } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useSpeechRecognition } from "../hooks/useSpeechRecognition";
 
 interface ChatInputProps {
@@ -10,32 +10,73 @@ interface ChatInputProps {
 
 export default function ChatInput({ onSend, loading }: ChatInputProps) {
   const [query, setQuery] = useState("");
+  const [truncationWarning, setTruncationWarning] = useState<string | null>(null);
+  const submitTimerRef = useRef<number | null>(null);
   const maxChars = 500;
 
   const { supported, listening, transcript, error, start, stop } = useSpeechRecognition({
     lang: "hi-IN",
     onFinal: (final) => {
       setQuery((prev) => {
-        const merged = (prev ? prev.trim() + " " : "") + final;
-        return merged.slice(0, maxChars);
+        const base = prev.trimEnd();
+        const merged = base + (base ? " " : "") + final;
+        if (merged.length > maxChars) {
+          setTruncationWarning("Voice input truncated to fit 500-char limit");
+          return merged.slice(0, maxChars);
+        }
+        return merged;
       });
     },
   });
 
-  const submit = () => {
-    const trimmed = query.trim();
-    if (!trimmed) return;
-    onSend(trimmed);
+  const submit = (text?: string) => {
+    const candidate = (text ?? query).trim();
+    if (!candidate) return;
+    onSend(candidate);
     setQuery("");
+    setTruncationWarning(null);
+  };
+
+  const handleEnter = () => {
+    if (loading) return;
+    if (listening) {
+      // Mid-utterance Enter: stop the mic and wait briefly so the final
+      // transcript chunk has a chance to land before we submit.
+      stop();
+      if (submitTimerRef.current !== null) {
+        window.clearTimeout(submitTimerRef.current);
+      }
+      submitTimerRef.current = window.setTimeout(() => {
+        submitTimerRef.current = null;
+        submit();
+      }, 250);
+      return;
+    }
+    submit();
   };
 
   const onMicClick = () => {
     if (!supported) return;
     if (listening) stop();
-    else start();
+    else {
+      setTruncationWarning(null);
+      start();
+    }
   };
 
-  const displayValue = listening && transcript ? `${query}${query ? " " : ""}${transcript}` : query;
+  // Avoid double-spacing if the user already typed a trailing space.
+  const displayValue =
+    listening && transcript
+      ? `${query.trimEnd()}${query.trim() ? " " : ""}${transcript}`
+      : query;
+
+  const statusLine = listening
+    ? "● listening (hi-IN)"
+    : truncationWarning
+      ? truncationWarning
+      : error
+        ? `mic: ${error}`
+        : "";
 
   return (
     <div className="rounded-2xl border border-white/[0.05] bg-[rgba(40,40,42,0.7)] px-3.5 py-3 backdrop-blur-cg-glass">
@@ -44,8 +85,16 @@ export default function ChatInput({ onSend, loading }: ChatInputProps) {
           className="h-8 flex-1 bg-transparent text-[13px] text-cg-mist5 placeholder:text-cg-mist4 outline-none"
           placeholder="Chest tightness, age 64, started 30 min ago…"
           value={displayValue}
-          onChange={(e) => setQuery(e.target.value.slice(0, maxChars))}
-          onKeyDown={(e) => e.key === "Enter" && submit()}
+          onChange={(e) => {
+            setTruncationWarning(null);
+            setQuery(e.target.value.slice(0, maxChars));
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              handleEnter();
+            }
+          }}
           disabled={loading || listening}
         />
         <button
@@ -80,7 +129,7 @@ export default function ChatInput({ onSend, loading }: ChatInputProps) {
         <motion.button
           whileTap={{ scale: 0.97 }}
           type="button"
-          onClick={submit}
+          onClick={() => submit()}
           disabled={loading || listening || !query.trim()}
           className="flex h-8 items-center gap-1.5 rounded-lg bg-cg-peach-ink px-3 text-[12px] font-semibold text-cg-peach-ctx transition hover:bg-cg-peach-inkHi disabled:cursor-not-allowed disabled:opacity-50"
         >
@@ -89,9 +138,7 @@ export default function ChatInput({ onSend, loading }: ChatInputProps) {
         </motion.button>
       </div>
       <div className="mt-1.5 flex items-center justify-between text-[10px]">
-        <span className="text-cg-peach/80">
-          {listening ? "● listening (hi-IN)" : error ? `mic: ${error}` : ""}
-        </span>
+        <span className="text-cg-peach/80">{statusLine}</span>
         <span className="text-cg-mist4">
           {query.length}/{maxChars}
         </span>

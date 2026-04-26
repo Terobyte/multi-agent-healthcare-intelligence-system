@@ -90,20 +90,24 @@ def test_sse_demo_synthesizes_done_when_transcript_lacks_one(monkeypatch, tmp_pa
     assert "demo_transcript_invalid" in body
 
 
-def test_book_warehouse_failure_returns_rejected_not_500(client_with_key, monkeypatch):
-    """If book_atomic raises, /book must return a structured BookingOutput, not 500."""
-    client, main_module = client_with_key
+def test_book_warehouse_failure_returns_500_without_token_leak(client_with_key, monkeypatch):
+    """If book_atomic raises (DB outage), /book must surface as 5xx so monitoring
+    sees the outage. The raw exception text must NOT leak into the response.
+
+    Updated contract (was: 200/REJECTED). Returning 200 on infra failures hid
+    outages from uptime monitoring and the request-success SLO. The new
+    bubble-up + scrubbed-500 path keeps token-leak prevention while making
+    outages visible (see test_neg_book_swallow + test_bug20).
+    """
+    _, main_module = client_with_key
 
     def boom(*a, **kw):
         raise RuntimeError("warehouse exploded")
 
     monkeypatch.setattr(main_module, "book_atomic", boom)
-    r = client.post("/book", json={"facility_id": "5603", "patient_id": "p3"},
-                    headers={"X-Demo-Key": "test-secret"})
-    assert r.status_code == 200, r.text
-    body = r.json()
-    assert body["status"] == "REJECTED"
-    assert body["reason"] == "warehouse unavailable"
-    assert body["transaction_id"] is None
+    bubble_client = TestClient(main_module.app, raise_server_exceptions=False)
+    r = bubble_client.post("/book", json={"facility_id": "5603", "patient_id": "p3"},
+                           headers={"X-Demo-Key": "test-secret"})
+    assert r.status_code == 500, r.text
     # Must NOT leak the raw exception text
     assert "warehouse exploded" not in r.text

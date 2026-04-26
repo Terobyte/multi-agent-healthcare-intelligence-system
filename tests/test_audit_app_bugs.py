@@ -198,61 +198,13 @@ def test_health_warehouse_mask_does_not_reveal_short_ids(monkeypatch):
 #          (regression-protection — this test PASSES on current code)
 # ---------------------------------------------------------------------------
 
-def test_fm_endpoint_count_does_not_retry_within_ttl_after_failure(monkeypatch):
-    """
-    Regression-protection (intentional behaviour), not a bug.
-
-    After _fm_endpoint_count() fails, it stamps _ep_cache["ts"] to `now`.
-    For the next TTL seconds any probe returns the cached None without
-    calling the FM API again — preventing a retry storm when FM is down.
-    After the TTL expires the next call does retry.
-
-    This test SHOULD PASS on current code. If it starts failing, someone
-    changed the cache-stamp-on-failure behaviour unintentionally.
-    """
-    import app.main as m
-
-    # reset module-level cache
-    m._ep_cache["n"] = None
-    m._ep_cache["ts"] = 0.0
-    m.fm_client.cache_clear()
-
-    call_count = {"n": 0}
-
-    class FakeEndpoints:
-        def list_endpoints(self):
-            call_count["n"] += 1
-            if call_count["n"] == 1:
-                raise RuntimeError("simulated FM cold start")
-            return ["ep1", "ep2"]
-
-    fake = FakeEndpoints()
-    monkeypatch.setattr(m, "fm_client", lambda: fake)
-
-    time_seq = [1000.0, 1010.0, 1070.0]
-
-    def fake_time():
-        return time_seq.pop(0)
-
-    monkeypatch.setattr(time, "time", fake_time)
-
-    # First call: fails, stamps ts=1000, returns None
-    result1 = m._fm_endpoint_count()
-    assert result1 is None, "first call should return None on failure"
-
-    # Second call at t=1010 (within 60s TTL): must NOT retry
-    result2 = m._fm_endpoint_count()
-    assert result2 is None, "within TTL after failure, should still return cached None"
-    assert call_count["n"] == 1, (
-        f"expected exactly 1 upstream call within TTL, got {call_count['n']}"
-    )
-
-    # Third call at t=1070 (past TTL): must retry and succeed
-    result3 = m._fm_endpoint_count()
-    assert result3 == 2, f"after TTL, should retry and return count=2, got {result3}"
-    assert call_count["n"] == 2, (
-        f"expected 2 upstream calls total after TTL retry, got {call_count['n']}"
-    )
+# NOTE: removed test_fm_endpoint_count_does_not_retry_within_ttl_after_failure
+# — it codified the old "stamp ts on failure to prevent retry storm" behavior,
+# which was overridden by the stronger contract in
+# test_known_bugs_main.test_bug_health_cache_does_not_serve_stale_failure_after_recovery
+# (immediate retry after failure for fast recovery from transient outages).
+# The two tests directly contradicted each other; the recovery-priority
+# contract wins for medical-grade correctness.
 
 
 # ---------------------------------------------------------------------------

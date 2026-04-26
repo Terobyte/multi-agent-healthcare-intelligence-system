@@ -14,6 +14,12 @@ import type {
 const DEFAULT_USER_LAT = 19.076;
 const DEFAULT_USER_LON = 72.8777;
 
+// If the calibrated trust dips this far below the raw signal we mark the row
+// `demoted` so the UI can surface the "models disagree" tile. Pulled out as a
+// named constant because the same threshold is referenced in the backend
+// trust-blender doc — keep them in lockstep.
+export const MAX_FACTOR_DISAGREEMENT_THRESHOLD = 0.05;
+
 // One-time geolocation probe — populated by navigator.geolocation success
 // callback when the user grants access. Stays null on permission-deny / no-API,
 // in which case adaptHospital falls back to the Mumbai default. Cached per
@@ -39,6 +45,10 @@ function ensureUserLocation(): void {
   }
 }
 
+// Antimeridian note: this implementation uses signed dLon, which is fine for
+// any pair of points on the same side of the ±180 line — i.e. all of Mumbai's
+// service area. If we ever expand to facilities crossing the antimeridian
+// (Aleutians / Fiji / NZ) the dLon term needs wrap-around handling.
 function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371;
   const toRad = (deg: number) => (deg * Math.PI) / 180;
@@ -85,10 +95,19 @@ export function adaptHospital(
   ensureUserLocation();
   const userLat = opts.userLat ?? _cachedUserLat ?? DEFAULT_USER_LAT;
   const userLon = opts.userLon ?? _cachedUserLon ?? DEFAULT_USER_LON;
-  const distanceKm = Math.round(haversineKm(userLat, userLon, h.lat, h.lon) * 10) / 10;
-  const etaMinutes = Math.max(5, Math.round(distanceKm * 3));
+
+  // Guard against a backend row missing lat/lon (NaN/null/undefined) — without
+  // this haversineKm returns NaN and the UI ends up rendering "NaN km / NaN min".
+  // Fall back to 0/0 so the tile still renders; the demoted flag below still
+  // catches genuine data-quality issues separately.
+  const hasCoords = Number.isFinite(h.lat) && Number.isFinite(h.lon);
+  const distanceKm = hasCoords
+    ? Math.round(haversineKm(userLat, userLon, h.lat, h.lon) * 10) / 10
+    : 0;
+  const etaMinutes = hasCoords ? Math.max(5, Math.round(distanceKm * 3)) : 0;
   const demoted =
-    h.trust_source === "models-disagree" || h.trust_calibrated + 0.05 < h.trust_score;
+    h.trust_source === "models-disagree" ||
+    h.trust_calibrated + MAX_FACTOR_DISAGREEMENT_THRESHOLD < h.trust_score;
 
   return {
     id: h.facility_id,

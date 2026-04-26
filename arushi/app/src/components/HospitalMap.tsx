@@ -1,5 +1,5 @@
 import L from "leaflet";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { MapContainer, Marker, TileLayer, Tooltip, useMap } from "react-leaflet";
 import type { Hospital } from "../lib/types";
 
@@ -27,10 +27,18 @@ function makeIcon(tier: Tier): L.DivIcon {
 
 function FitToHospitals({ hospitals }: { hospitals: Hospital[] }) {
   const map = useMap();
+  // Only fit on the FIRST non-empty hospitals load. Subsequent identity changes
+  // (e.g. parent re-renders that recreate the array) must NOT fight the user's
+  // pan/zoom mid-interaction. Tracking via ref so it survives re-renders.
+  const didFitRef = useRef(false);
   useEffect(() => {
     if (hospitals.length === 0) return;
+    if (didFitRef.current) return;
     const bounds = L.latLngBounds(hospitals.map((h) => [h.lat, h.lng]));
-    map.fitBounds(bounds.pad(0.25), { animate: true, maxZoom: 11 });
+    // maxZoom 9 keeps Mumbai-area dense urban clusters readable instead of
+    // over-zooming into a single pin when pad(0.25) collapses bounds.
+    map.fitBounds(bounds.pad(0.25), { animate: true, maxZoom: 9 });
+    didFitRef.current = true;
   }, [hospitals, map]);
   return null;
 }
@@ -57,8 +65,12 @@ export default function HospitalMap({ hospitals }: { hospitals: Hospital[] }) {
         className="h-full w-full"
         style={{ minHeight: 260 }}
         zoomControl={false}
+        attributionControl={false}
       >
-        <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png" />
+        <TileLayer
+          url="https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png"
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+        />
         <FitToHospitals hospitals={hospitals} />
         {ranked.map(({ hospital, tier }) => (
           <Marker key={hospital.id} position={[hospital.lat, hospital.lng]} icon={makeIcon(tier)}>

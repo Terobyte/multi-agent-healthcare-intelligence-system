@@ -6,7 +6,10 @@
  * rather than letting `start()` no-op silently.
  *
  * Interim results stream into `transcript` so the input field shows live
- * partial recognition; the final result fires `onFinal` once and stops.
+ * partial recognition; final chunks accumulate locally and the consolidated
+ * text is delivered through `onFinal` exactly once when the session ends —
+ * this avoids duplicate appends in callers when continuous mode produces
+ * multiple final results in a single session.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -45,6 +48,8 @@ export function useSpeechRecognition({
   const [error, setError] = useState<string | null>(null);
   const recRef = useRef<SR | null>(null);
   const onFinalRef = useRef(onFinal);
+  // Per-session accumulator for finalized chunks. Reset on start, drained on end.
+  const finalBufferRef = useRef("");
 
   // Keep latest onFinal without re-creating the recognition instance on every render.
   useEffect(() => {
@@ -73,9 +78,12 @@ export function useSpeechRecognition({
         if (r.isFinal) finalText += r[0].transcript;
         else interimText += r[0].transcript;
       }
-      setTranscript((prev) => (finalText ? prev + finalText : interimText || prev));
-      if (finalText && onFinalRef.current) {
-        onFinalRef.current(finalText.trim());
+      if (finalText) {
+        finalBufferRef.current += finalText;
+        // Display the consolidated finals (plus any current interim suffix).
+        setTranscript(finalBufferRef.current + (interimText ? " " + interimText : ""));
+      } else {
+        setTranscript(finalBufferRef.current ? finalBufferRef.current + " " + interimText : interimText);
       }
     };
     rec.onerror = (e: any) => {
@@ -84,16 +92,30 @@ export function useSpeechRecognition({
       if (msg !== "no-speech" && msg !== "aborted") setError(msg);
       setListening(false);
     };
-    rec.onend = () => setListening(false);
+    rec.onend = () => {
+      // Drain the accumulated finals exactly once per session.
+      const consolidated = finalBufferRef.current.trim();
+      finalBufferRef.current = "";
+      if (consolidated && onFinalRef.current) {
+        onFinalRef.current(consolidated);
+      }
+      setListening(false);
+    };
 
     recRef.current = rec;
     return () => {
+      // Null handlers BEFORE stop() so the in-flight final/end events don't
+      // fire stale callbacks against an unmounted caller.
+      rec.onresult = null;
+      rec.onerror = null;
+      rec.onend = null;
       try {
         rec.stop();
       } catch {
         /* already stopped */
       }
       recRef.current = null;
+      finalBufferRef.current = "";
     };
   }, [lang]);
 
@@ -102,6 +124,7 @@ export function useSpeechRecognition({
     if (!rec || listening) return;
     setError(null);
     setTranscript("");
+    finalBufferRef.current = "";
     try {
       rec.start();
       setListening(true);

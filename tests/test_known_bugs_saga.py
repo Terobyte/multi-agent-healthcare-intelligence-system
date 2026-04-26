@@ -214,7 +214,11 @@ def test_bug20_exception_log_must_not_leak_databricks_token(monkeypatch):
         lg.setLevel(logging.DEBUG)
 
     try:
-        client = TestClient(main_module.app)
+        # raise_server_exceptions=False: /book now bubbles RuntimeError so
+        # monitoring sees DB outages as 5xx (see test_neg_book_swallow). Without
+        # this flag TestClient re-raises the RuntimeError before the global
+        # exception_handler can convert it to a scrubbed 500.
+        client = TestClient(main_module.app, raise_server_exceptions=False)
         r = client.post(
             "/book",
             json={"facility_id": "5603", "patient_id": "p_leak"},
@@ -224,7 +228,15 @@ def test_bug20_exception_log_must_not_leak_databricks_token(monkeypatch):
         for lg in targets:
             lg.removeHandler(handler)
 
-    assert r.status_code == 200, r.text
+    # Either 200 (legacy swallow path) or 500 (new bubble-up path) is acceptable
+    # — the bug under test is the TOKEN LEAK, not the status code. /book may now
+    # bubble RuntimeError as 500 for monitoring visibility (see
+    # test_neg_book_swallow); the scrubber must still prevent token leaks in
+    # both logs and the response body.
+    assert r.status_code in (200, 500), r.text
+    assert "dapi" not in r.text, (
+        "Databricks token substring 'dapi' leaked into HTTP response body"
+    )
     assert captured, "expected logger.exception to fire from /book"
 
     leaked: list[str] = []

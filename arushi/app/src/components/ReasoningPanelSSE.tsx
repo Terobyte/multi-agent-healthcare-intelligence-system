@@ -75,37 +75,53 @@ export default function ReasoningPanelSSE({ sessionId, useDemo }: Props) {
       }
     };
 
-    AGENT_KINDS.forEach((k) => es.addEventListener(k, push(k) as EventListener));
+    // Keep handlers in a registry so cleanup can call removeEventListener for
+    // every one we added — defensive for HMR / React Strict-Mode double-mount,
+    // even though es.close() detaches them implicitly.
+    const handlers: Array<[string, EventListener]> = [];
+    const on = (type: string, fn: EventListener) => {
+      es.addEventListener(type, fn);
+      handlers.push([type, fn]);
+    };
 
-    es.addEventListener("done", (ev) => {
+    AGENT_KINDS.forEach((k) => on(k, push(k) as EventListener));
+
+    const onDone = (ev: Event) => {
       push("done")(ev as MessageEvent<string>);
       setStatus("done");
+      // Explicit done from server — no point keeping the connection open.
       es.close();
-    });
-    // Network-level errors arrive as plain `Event` (no .data) — only forward to
-    // the UI when the server actually sent a JSON payload via `event: error`.
-    es.addEventListener("error", (ev) => {
+    };
+    on("done", onDone);
+
+    // Network-level errors arrive as plain `Event` (no .data). EventSource has
+    // built-in exponential reconnect, so DO NOT call es.close() here for
+    // transient drops — that would kill auto-reconnect and force the user to
+    // reload the page. We only flip status to "error" so the UI shows reconnecting.
+    // For server-sent `event: error` payloads (which carry .data), treat as
+    // terminal: surface the message and close.
+    const onError = (ev: Event) => {
       const msg = ev as MessageEvent<string>;
       if (typeof msg.data === "string" && msg.data.length > 0) {
         push("error")(msg);
-      } else {
-        setEvents((prev) => cap([
-          ...prev,
-          {
-            agent: "stream_tick",
-            token: "Connection error.",
-            trace_id: "",
-            ts: "",
-            kind: "error",
-          },
-        ]));
+        setStatus("error");
+        es.close();
+        return;
       }
+      // Transient — let EventSource retry on its own backoff schedule.
       setStatus("error");
-      es.close();
-    });
+    };
+    on("error", onError);
     // `ping` events are heartbeat-only (Tero Block 33) — ignore in UI.
 
     return () => {
+      for (const [type, fn] of handlers) {
+        try {
+          es.removeEventListener(type, fn);
+        } catch {
+          /* listener already detached */
+        }
+      }
       try {
         es.close();
       } catch {

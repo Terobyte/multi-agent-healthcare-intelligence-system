@@ -29,6 +29,25 @@ interface CallOpts {
   signal?: AbortSignal;
 }
 
+// Hardened HTTP error subclass — carries .status so lib/api.ts can distinguish
+// 401/403 (auth misconfig — surface, do NOT silently fall back to mocks) from
+// network/5xx (acceptable mock fallback). `parse: true` flags JSON-shape issues
+// from a real backend (rethrow as backend-data-bug, not a network outage).
+export class ApiError extends Error {
+  status: number;
+  parse: boolean;
+  constructor(message: string, status: number, parse = false) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.parse = parse;
+  }
+}
+
+// 30s ceiling — long enough for cold Databricks warehouse warmup, short enough
+// that a hung pod doesn't stall the demo's recommend() spinner indefinitely.
+const FETCH_TIMEOUT_MS = 30000;
+
 async function call<T>(
   method: Method,
   path: string,
@@ -42,17 +61,43 @@ async function call<T>(
   }
   const headers: Record<string, string> = { "content-type": "application/json" };
   if (opts.mutating && DEMO_KEY) headers["X-Demo-Key"] = DEMO_KEY;
-  const r = await fetch(`${BASE}${path}`, {
-    method,
-    headers,
-    body: body == null ? undefined : JSON.stringify(body),
-    signal: opts.signal,
-  });
-  if (!r.ok) {
-    const text = await r.text().catch(() => "");
-    throw new Error(`${method} ${path} → ${r.status} ${text.slice(0, 200)}`);
+
+  // Compose caller-provided AbortSignal with our timeout — abort on whichever
+  // fires first. Cleared in `finally` so the timer can't fire on a finished call.
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  if (opts.signal) {
+    if (opts.signal.aborted) controller.abort();
+    else opts.signal.addEventListener("abort", () => controller.abort(), { once: true });
   }
-  return (await r.json()) as T;
+
+  const url = `${BASE}${path}`;
+  try {
+    const r = await fetch(url, {
+      method,
+      headers,
+      body: body == null ? undefined : JSON.stringify(body),
+      signal: controller.signal,
+    });
+    if (!r.ok) {
+      const text = await r.text().catch(() => "");
+      // Slice to 100 chars and prefix so callers don't render raw backend traces
+      // (which could leak stack frames / SQL fragments) as user-visible text.
+      throw new ApiError(
+        `upstream error: ${method} ${path} → ${r.status} ${text.slice(0, 100)}`,
+        r.status,
+      );
+    }
+    try {
+      return (await r.json()) as T;
+    } catch {
+      // 2xx with malformed body — backend bug, not a network outage. lib/api.ts
+      // checks .parse to decide whether to surface vs fall back to mocks.
+      throw new ApiError(`backend returned invalid JSON at ${url}`, 200, true);
+    }
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 export const api = {
