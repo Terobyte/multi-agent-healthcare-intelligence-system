@@ -19,9 +19,11 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 from starlette.middleware.base import BaseHTTPMiddleware
 from app.agents.booking import book_atomic
+from app.agents.router import recommend as _recommend
 from app.agents.triage import triage as _triage_agent
 from app.schemas import BookingOutput, ReasoningPanelEvent, TriageOutput
 from app.settings import settings
+from contracts.schemas import RankedHospital
 import mlflow.deployments
 
 # bug #20: scrub Bearer/dapi token shapes from log records and formatted output.
@@ -401,3 +403,37 @@ async def triage_endpoint(request: Request, req: TriageRequest):
     event loop stays unblocked during the Databricks LLM round-trip (~2-8 s).
     """
     return await asyncio.to_thread(_triage_agent, req.user_text, req.language)
+
+
+class RecommendRequest(BaseModel):
+    user_text: str = Field(max_length=4000)
+    city: str = Field(default="mumbai", max_length=80)
+    language: str = Field(default="en", max_length=8)
+
+
+class RecommendResponse(BaseModel):
+    triage: TriageOutput
+    hospitals: list[RankedHospital]
+    fast_path: bool
+
+
+@app.post("/recommend", response_model=RecommendResponse)
+@limiter.limit("20/minute")
+async def recommend_endpoint(request: Request, req: RecommendRequest):
+    """Symptom text → triage result + ranked hospitals (combined pipeline).
+
+    Runs triage (Llama 3.3 70B with keyword fallback) then the router agent
+    (trust × bed-availability × specialty × distance) in sequence.  Both calls
+    are wrapped in asyncio.to_thread so DB + LLM round-trips never block the
+    FastAPI event loop.
+
+    Returns a TriageOutput, a ranked list of hospitals, and the fast_path flag
+    so callers get the full routing decision in a single HTTP round-trip.
+    """
+    triage_result = await asyncio.to_thread(_triage_agent, req.user_text, req.language)
+    hospitals = await asyncio.to_thread(_recommend, triage_result, req.city)
+    return RecommendResponse(
+        triage=triage_result,
+        hospitals=hospitals,
+        fast_path=triage_result.fast_path,
+    )
