@@ -134,17 +134,31 @@ MAX_REQUEST_BYTES = 64 * 1024
 
 class _BodySizeLimitMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
+        # bug #86: int("-100") > MAX is False so a negative CL slipped through.
+        # bug #85: a chunked body has no Content-Length, so the whole check was
+        # a no-op for any client setting Transfer-Encoding: chunked. The
+        # frontend never uses chunked encoding for /book or /outcome, so we
+        # require Content-Length on writes; chunked uploads get 411 Length
+        # Required, which is the standards-correct response.
+        te = request.headers.get("transfer-encoding", "").lower()
+        if "chunked" in te:
+            return JSONResponse(
+                status_code=411,
+                content={"detail": "Length Required: chunked transfer encoding not accepted"},
+            )
         cl = request.headers.get("content-length")
         if cl is not None:
             try:
-                if int(cl) > MAX_REQUEST_BYTES:
-                    return JSONResponse(
-                        status_code=413,
-                        content={"detail": f"request body exceeds {MAX_REQUEST_BYTES} bytes"},
-                    )
+                cl_int = int(cl)
             except ValueError:
-                # Malformed Content-Length — treat as suspicious, refuse.
                 return JSONResponse(status_code=400, content={"detail": "invalid Content-Length"})
+            if cl_int < 0:
+                return JSONResponse(status_code=400, content={"detail": "negative Content-Length"})
+            if cl_int > MAX_REQUEST_BYTES:
+                return JSONResponse(
+                    status_code=413,
+                    content={"detail": f"request body exceeds {MAX_REQUEST_BYTES} bytes"},
+                )
         return await call_next(request)
 
 
@@ -156,20 +170,28 @@ DEMO_KEY = os.getenv("DEMO_KEY", "")
 DEV_MODE = os.getenv("AAROGYANET_DEV") == "1"
 
 
+_TRUSTED_PROXIES = {
+    p.strip() for p in os.getenv("TRUSTED_PROXIES", "").split(",") if p.strip()
+}
+
+
 def _client_key(request: Request) -> str:
     """Rate-limit key that survives Render's reverse proxy.
 
     `get_remote_address` returns the proxy IP when X-Forwarded-For is present —
     that collapses every Render user onto a single bucket and makes the limit
-    trivially DoS-able. Read the first XFF entry instead, fall back to the
-    direct peer address only if XFF is absent or empty.
+    trivially DoS-able. We read the first XFF entry — but ONLY if the request
+    arrived via a configured trusted proxy (bug #92). Without that gate, any
+    client could spoof XFF to any IP and bypass per-IP limiting. If
+    TRUSTED_PROXIES is unset (local dev), fall back to peer address.
     """
+    peer = get_remote_address(request)
     xff = request.headers.get("x-forwarded-for", "")
-    if xff:
+    if xff and _TRUSTED_PROXIES and peer in _TRUSTED_PROXIES:
         first = xff.split(",")[0].strip()
         if first:
             return first
-    return get_remote_address(request)
+    return peer
 
 
 limiter = Limiter(key_func=_client_key)
@@ -272,8 +294,14 @@ async def _scrubbed_500(request: Request, exc: Exception):
     # 5xx so monitoring sees them — the prior try/except returning 200/REJECTED
     # masked outages. The LogRecord factory above scrubs Bearer/dapi tokens out
     # of logs; this handler scrubs them out of the JSON response body too.
-    logger.exception("unhandled_exception path=%s", request.url.path)
-    return JSONResponse(status_code=500, content={"detail": "internal error"})
+    # bug #89: include a trace_id so a user reporting "internal error" can be
+    # cross-referenced against logs without having to guess the timestamp.
+    trace_id = uuid4().hex[:12]
+    logger.exception("unhandled_exception trace=%s path=%s", trace_id, request.url.path)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "internal error", "trace_id": trace_id},
+    )
 
 
 # Order matches the reasoning-panel pipeline. Real agents (Mubarak's wiring)
@@ -315,7 +343,10 @@ async def sse(request: Request, session_id: SessionId):
         # emission. Old impl only pinged when an agent finished AND >15s had
         # passed — so fast agents (no gate trip) and slow agents (blocked in
         # await) both broke it, and the proxy idle-closed the stream.
-        queue: asyncio.Queue = asyncio.Queue()
+        # bug #93: bounded queue so a slow consumer cannot OOM the worker.
+        # Heartbeat + producer combined emit ~AGENT_ORDER + a few pings per
+        # connection; 64 is roughly 6× expected steady-state.
+        queue: asyncio.Queue = asyncio.Queue(maxsize=64)
         DONE = object()
 
         async def heartbeat():
