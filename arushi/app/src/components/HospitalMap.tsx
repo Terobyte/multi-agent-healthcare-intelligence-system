@@ -21,15 +21,16 @@ function availabilityFor(hospital: Hospital): Availability {
   return "low";
 }
 
-function makeIcon(level: Availability): L.DivIcon {
+function makeIcon(level: Availability, index: number): L.DivIcon {
   const styles: Record<Availability, string> = {
     high: "background:#87A878;box-shadow:0 0 0 4px rgba(135,168,120,0.30);",
     ok: "background:#FFB088;box-shadow:0 0 0 4px rgba(255,176,136,0.25);",
     low: "background:#C2522B;box-shadow:0 0 0 3px rgba(194,82,43,0.30);opacity:0.85;",
   };
+  const delay = ((index % 5) * -0.37).toFixed(2);
   return new L.DivIcon({
     className: "cg-hospital-marker",
-    html: `<div style="width:12px;height:12px;border-radius:999px;${styles[level]}"></div>`,
+    html: `<div class="cg-map-dot" style="width:12px;height:12px;border-radius:999px;animation-delay:${delay}s;${styles[level]}"></div>`,
     iconSize: [12, 12],
     iconAnchor: [6, 6],
   });
@@ -84,8 +85,8 @@ export default function HospitalMap({ hospitals }: { hospitals: Hospital[] }) {
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
         />
         <FitToHospitals hospitals={hospitals} />
-        {tagged.map(({ hospital, level }) => (
-          <Marker key={hospital.id} position={[hospital.lat, hospital.lng]} icon={makeIcon(level)}>
+        {tagged.map(({ hospital, level }, index) => (
+          <Marker key={hospital.id} position={[hospital.lat, hospital.lng]} icon={makeIcon(level, index)}>
             <Tooltip direction="top" offset={[0, -8]} opacity={1} permanent={false}>
               {hospital.name} · availability {level}
             </Tooltip>

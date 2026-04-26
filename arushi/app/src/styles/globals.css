@@ -77,3 +77,20 @@ body {
 .cg-overline-rule-sage::after {
   background: linear-gradient(90deg, rgba(200, 228, 208, 0.70), rgba(200, 228, 208, 0));
 }
+
+/* Map pins breathe subtly so live availability feels active without stealing attention. */
+@keyframes cg-map-dot-breathe {
+  0%, 100% { transform: scale(0.96); }
+  50%      { transform: scale(1.04); }
+}
+
+.cg-map-dot {
+  transform-origin: center;
+  animation: cg-map-dot-breathe 2.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cg-map-dot {
+    animation: none;
+  }
+}
