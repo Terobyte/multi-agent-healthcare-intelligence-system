@@ -1,16 +1,21 @@
 import asyncio
 import json
 import logging
+import os
 import time
 import concurrent.futures
 from datetime import datetime, timezone
 from functools import lru_cache
+from pathlib import Path
 from typing import Optional
 from uuid import uuid4
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 from app.agents.booking import book_atomic
 from app.schemas import BookingOutput, ReasoningPanelEvent
 from app.settings import settings
@@ -38,6 +43,20 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Demo-stage protection for mutating endpoints. Public Render URL otherwise lets
+# any audience member POST /book and dirty the trust calibration mid-pitch.
+DEMO_KEY = os.getenv("DEMO_KEY", "")
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+# Default 500 → 429 with a usable Retry-After header.
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+def require_demo_key(x_demo_key: str = Header(default="")):
+    # Empty DEMO_KEY → auth disabled (local dev). In Render env, set the secret.
+    if DEMO_KEY and x_demo_key != DEMO_KEY:
+        raise HTTPException(status_code=401, detail="invalid X-Demo-Key")
 
 
 @lru_cache(maxsize=1)
@@ -102,8 +121,9 @@ class BookRequest(BaseModel):
     patient_id: str
 
 
-@app.post("/book", response_model=BookingOutput)
-def book(req: BookRequest):
+@app.post("/book", response_model=BookingOutput, dependencies=[Depends(require_demo_key)])
+@limiter.limit("5/minute")
+def book(request: Request, req: BookRequest):
     try:
         # Validate inside the try so a malformed dict from book_atomic raises
         # ValidationError HERE, not later in FastAPI's response serializer
@@ -152,6 +172,31 @@ async def sse(session_id: str):
         except Exception as e:
             logger.exception("sse_failed trace=%s", trace_id)
             yield f"event: error\ndata: {json.dumps({'code':'sse_error','message':str(e)[:200]})}\n\n"
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
+    )
+
+
+# Demo insurance: if Llama 3.3 70B endpoint 429s on stage, frontend swaps to
+# /sse_demo and replays a recorded transcript at human-readable cadence.
+_DEMO_TRANSCRIPT = Path(__file__).parent / "agents" / "_demo_transcript.sse"
+
+
+@app.get("/sse_demo")
+async def sse_demo(session_id: str):
+    if not _DEMO_TRANSCRIPT.exists():
+        raise HTTPException(status_code=503, detail="transcript not recorded")
+    text = _DEMO_TRANSCRIPT.read_text()
+
+    async def gen():
+        for chunk in text.split("\n\n"):
+            chunk = chunk.strip()
+            if chunk:
+                yield chunk + "\n\n"
+                await asyncio.sleep(0.25)
 
     return StreamingResponse(
         gen(),

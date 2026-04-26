@@ -2,6 +2,28 @@
 
 > Read this first to pick up where Tero left off.
 
+## Deploy status (2026-04-25 — latest)
+
+**Public URL:** `https://aarogyanet-api.onrender.com`
+**Current deploy state:** 🔴 RED — Render returns HTTP 404 for all routes.
+**Fix attempt in progress:** pushed `1a44278` + util/slowapi commits to `origin/main` to trigger a fresh Render build via `autoDeploy: true`. Monitor Render dashboard logs.
+
+### Stop condition ⏳ NOT YET MET — verify before URL handoff
+```bash
+curl -s https://aarogyanet-api.onrender.com/health
+# Must return HTTP 200 with {"status":"ok"} or {"status":"degraded"}
+```
+
+### URL handoff ⏳ PENDING — do AFTER green
+Share with both teammates once the health check passes:
+- **Mubarak** (`Mozzicato@users.noreply.github.com`)
+- **Arushi** (`arushi2610@users.noreply.github.com`)
+
+Message template:
+> Hey! Our API is live at https://aarogyanet-api.onrender.com — hit `/health` to confirm, `/docs` for the Swagger UI.
+
+---
+
 ## Status snapshot (2026-04-25, last update mid-build)
 
 **Edition:** Databricks Trial for Work, OAuth via `databricks auth login`.

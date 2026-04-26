@@ -10,6 +10,7 @@ import logging
 from uuid import uuid4
 
 from app.db import warehouse_query
+from app.util import hash_patient_id
 
 logger = logging.getLogger("booking")
 
