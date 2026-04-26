@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Literal, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class Hospital(BaseModel):
@@ -70,3 +70,13 @@ class ReasoningPanelEvent(BaseModel):
     token: str
     trace_id: str
     ts: datetime
+
+
+class TriageOutput(BaseModel):
+    specialty: str
+    urgency: int = Field(ge=1, le=5)  # 1 (low) → 5 (life-threatening); reject hallucinated 99
+    confidence: float = Field(ge=0.0, le=1.0)
+    required_bed_type: Literal["icu", "hdu", "general", "pediatric", "maternity", "isolation"]
+    fast_path: bool
+    red_flag_match: list[str] = Field(default_factory=list)
+    reasoning: str
