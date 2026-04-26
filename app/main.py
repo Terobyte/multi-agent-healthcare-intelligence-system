@@ -18,7 +18,8 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 from app.agents.booking import book_atomic
-from app.schemas import BookingOutput, ReasoningPanelEvent
+from app.agents.triage import triage as _triage_agent
+from app.schemas import BookingOutput, ReasoningPanelEvent, TriageOutput
 from app.settings import settings
 import mlflow.deployments
 
@@ -194,21 +195,18 @@ class BookRequest(BaseModel):
 @app.post("/book", response_model=BookingOutput, dependencies=[Depends(require_demo_key)])
 @limiter.limit("5/minute")
 def book(request: Request, req: BookRequest):
-    try:
-        # Validate inside the try so a malformed dict from book_atomic raises
-        # ValidationError HERE, not later in FastAPI's response serializer.
-        return BookingOutput(**book_atomic(req.facility_id, req.patient_id, {}))
-    except Exception:
-        # Catch infra failures (databricks-sql Bearer token in the message,
-        # network IO) here so the LogRecord factory at module top scrubs them
-        # before any handler — and so the demo gets a structured REJECTED
-        # response instead of a 500 that leaks the token via uvicorn.
-        logger.exception("book_endpoint_unhandled facility=%s patient=%s", req.facility_id, req.patient_id)
-        return BookingOutput(
-            transaction_id=None, status="REJECTED",
-            resources={}, facility_id=req.facility_id,
-            reason="warehouse unavailable",
-        )
+    return BookingOutput(**book_atomic(req.facility_id, req.patient_id, {}))
+
+
+@app.exception_handler(Exception)
+async def _scrubbed_500(request: Request, exc: Exception):
+    # Infra failures (DB outage, mlflow client throwing, etc.) MUST surface as
+    # 5xx so monitoring sees them — the prior try/except returning 200/REJECTED
+    # masked outages. The LogRecord factory above scrubs Bearer/dapi tokens out
+    # of logs; this handler scrubs them out of the JSON response body too.
+    from fastapi.responses import JSONResponse
+    logger.exception("unhandled_exception path=%s", request.url.path)
+    return JSONResponse(status_code=500, content={"detail": "internal error"})
 
 
 # Order matches the reasoning-panel pipeline. Real agents (Mubarak's wiring)
@@ -336,3 +334,19 @@ async def sse_demo(session_id: str):
         media_type="text/event-stream",
         headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
     )
+
+
+class TriageRequest(BaseModel):
+    user_text: str
+    language: str = "en"
+
+
+@app.post("/triage", response_model=TriageOutput)
+@limiter.limit("20/minute")
+async def triage_endpoint(request: Request, req: TriageRequest):
+    """Symptom text → TriageOutput via Llama 3.3 70B (keyword fallback on error).
+
+    Wraps the synchronous triage() call in asyncio.to_thread so the FastAPI
+    event loop stays unblocked during the Databricks LLM round-trip (~2-8 s).
+    """
+    return await asyncio.to_thread(_triage_agent, req.user_text, req.language)

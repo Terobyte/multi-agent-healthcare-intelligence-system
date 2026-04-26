@@ -1,0 +1,293 @@
+{
+  "_comment": "Symptom-to-specialty corpus. Each entry has one or more keyword fragments (English + Hindi transliterations). The keyword-fallback scanner lowercases the input and checks contains(). Highest-urgency match wins.",
+  "corpus": [
+    {
+      "keywords": ["chest pain", "सीने में दर्द", "सीने का दर्द", "छाती में दर्द", "सीने मे दर्द"],
+      "specialty": "cardiology",
+      "urgency": 4,
+      "bed_type": "icu"
+    },
+    {
+      "keywords": ["heart attack", "दिल का दौरा", "हार्ट अटैक", "हृदयाघात"],
+      "specialty": "cardiology",
+      "urgency": 5,
+      "bed_type": "icu"
+    },
+    {
+      "keywords": ["cardiac arrest", "कार्डियक अरेस्ट", "दिल बंद"],
+      "specialty": "cardiology",
+      "urgency": 5,
+      "bed_type": "icu"
+    },
+    {
+      "keywords": ["myocardial", "मायोकार्डियल"],
+      "specialty": "cardiology",
+      "urgency": 5,
+      "bed_type": "icu"
+    },
+    {
+      "keywords": ["arm radiation", "radiating to arm", "radiating arm pain"],
+      "specialty": "cardiology",
+      "urgency": 5,
+      "bed_type": "icu"
+    },
+    {
+      "keywords": ["palpitation", "घबराहट", "धड़कन तेज़", "दिल तेज़ धड़कना"],
+      "specialty": "cardiology",
+      "urgency": 3,
+      "bed_type": "hdu"
+    },
+    {
+      "keywords": ["arrhythmia", "अनियमित धड़कन"],
+      "specialty": "cardiology",
+      "urgency": 4,
+      "bed_type": "icu"
+    },
+    {
+      "keywords": ["swollen feet", "पैर सूजना", "पैरों में सूजन"],
+      "specialty": "cardiology",
+      "urgency": 3,
+      "bed_type": "hdu"
+    },
+    {
+      "keywords": ["dyspnea", "डिस्पनिया"],
+      "specialty": "pulmonology",
+      "urgency": 4,
+      "bed_type": "icu"
+    },
+    {
+      "keywords": ["shortness of breath", "सांस फूलना", "सांस लेने में तकलीफ", "सांस लेने में परेशानी", "सांस नहीं आ रही"],
+      "specialty": "pulmonology",
+      "urgency": 4,
+      "bed_type": "icu"
+    },
+    {
+      "keywords": ["difficulty breath", "सांस में कठिनाई", "सांस लेना मुश्किल"],
+      "specialty": "pulmonology",
+      "urgency": 4,
+      "bed_type": "icu"
+    },
+    {
+      "keywords": ["not breathing", "सांस नहीं आ रही", "सांस रुक गई"],
+      "specialty": "pulmonology",
+      "urgency": 5,
+      "bed_type": "icu"
+    },
+    {
+      "keywords": ["respiratory", "रेस्पिरेटरी", "श्वसन समस्या"],
+      "specialty": "pulmonology",
+      "urgency": 4,
+      "bed_type": "icu"
+    },
+    {
+      "keywords": ["pneumonia", "निमोनिया"],
+      "specialty": "pulmonology",
+      "urgency": 3,
+      "bed_type": "hdu"
+    },
+    {
+      "keywords": ["asthma", "अस्थमा", "दमा"],
+      "specialty": "pulmonology",
+      "urgency": 3,
+      "bed_type": "hdu"
+    },
+    {
+      "keywords": ["tuberculosis", "tb", "टीबी", "तपेदिक", "क्षय रोग"],
+      "specialty": "pulmonology",
+      "urgency": 3,
+      "bed_type": "isolation"
+    },
+    {
+      "keywords": ["covid", "कोविड", "कोरोना"],
+      "specialty": "pulmonology",
+      "urgency": 3,
+      "bed_type": "isolation"
+    },
+    {
+      "keywords": ["oxygen saturation", "ऑक्सीजन कम", "ऑक्सीजन सैचुरेशन"],
+      "specialty": "pulmonology",
+      "urgency": 4,
+      "bed_type": "icu"
+    },
+    {
+      "keywords": ["stroke", "स्ट्रोक", "ब्रेन अटैक", "मस्तिष्काघात", "लकवा अचानक"],
+      "specialty": "neurology",
+      "urgency": 5,
+      "bed_type": "icu"
+    },
+    {
+      "keywords": ["seizure", "दौरा", "मिर्गी का दौरा", "फिट आना", "फिट पड़ना"],
+      "specialty": "neurology",
+      "urgency": 4,
+      "bed_type": "icu"
+    },
+    {
+      "keywords": ["paralysis", "लकवा", "पैरालिसिस", "शरीर सुन्न"],
+      "specialty": "neurology",
+      "urgency": 4,
+      "bed_type": "icu"
+    },
+    {
+      "keywords": ["head injury", "सिर में चोट", "सिर की चोट"],
+      "specialty": "neurosurgery",
+      "urgency": 5,
+      "bed_type": "icu"
+    },
+    {
+      "keywords": ["unconscious", "बेहोश", "होश नहीं", "अचेत"],
+      "specialty": "emergency medicine",
+      "urgency": 5,
+      "bed_type": "icu"
+    },
+    {
+      "keywords": ["unresponsive", "कोई प्रतिक्रिया नहीं", "प्रतिक्रियाहीन"],
+      "specialty": "emergency medicine",
+      "urgency": 5,
+      "bed_type": "icu"
+    },
+    {
+      "keywords": ["fainting", "चक्कर आकर गिरना", "बेहोश हो जाना"],
+      "specialty": "neurology",
+      "urgency": 3,
+      "bed_type": "hdu"
+    },
+    {
+      "keywords": ["accident", "दुर्घटना", "एक्सीडेंट"],
+      "specialty": "trauma surgery",
+      "urgency": 4,
+      "bed_type": "icu"
+    },
+    {
+      "keywords": ["fracture", "फ्रैक्चर", "हड्डी टूटना", "हड्डी टूट गई"],
+      "specialty": "orthopedics",
+      "urgency": 3,
+      "bed_type": "hdu"
+    },
+    {
+      "keywords": ["bleeding", "खून बहना", "रक्तस्राव", "खून निकलना"],
+      "specialty": "emergency medicine",
+      "urgency": 4,
+      "bed_type": "icu"
+    },
+    {
+      "keywords": ["heavy bleeding", "बहुत ज़्यादा खून", "तेज़ रक्तस्राव"],
+      "specialty": "emergency medicine",
+      "urgency": 5,
+      "bed_type": "icu"
+    },
+    {
+      "keywords": ["appendicitis", "अपेंडिसाइटिस", "अपेंडिक्स"],
+      "specialty": "general surgery",
+      "urgency": 4,
+      "bed_type": "hdu"
+    },
+    {
+      "keywords": ["abdominal pain", "पेट दर्द", "पेट में दर्द"],
+      "specialty": "gastroenterology",
+      "urgency": 2,
+      "bed_type": "general"
+    },
+    {
+      "keywords": ["vomiting blood", "खून की उल्टी", "उल्टी में खून"],
+      "specialty": "gastroenterology",
+      "urgency": 4,
+      "bed_type": "hdu"
+    },
+    {
+      "keywords": ["dengue", "डेंगू"],
+      "specialty": "internal medicine",
+      "urgency": 3,
+      "bed_type": "general"
+    },
+    {
+      "keywords": ["malaria", "मलेरिया"],
+      "specialty": "internal medicine",
+      "urgency": 3,
+      "bed_type": "general"
+    },
+    {
+      "keywords": ["typhoid", "टाइफाइड"],
+      "specialty": "internal medicine",
+      "urgency": 2,
+      "bed_type": "general"
+    },
+    {
+      "keywords": ["fever", "बुखार", "ज्वर", "तेज़ बुखार"],
+      "specialty": "internal medicine",
+      "urgency": 2,
+      "bed_type": "general"
+    },
+    {
+      "keywords": ["child", "बच्चा", "बच्चे को"],
+      "specialty": "pediatrics",
+      "urgency": 2,
+      "bed_type": "pediatric"
+    },
+    {
+      "keywords": ["infant", "शिशु", "छोटा बच्चा"],
+      "specialty": "pediatrics",
+      "urgency": 3,
+      "bed_type": "pediatric"
+    },
+    {
+      "keywords": ["newborn", "नवजात", "नवजात शिशु"],
+      "specialty": "neonatology",
+      "urgency": 4,
+      "bed_type": "pediatric"
+    },
+    {
+      "keywords": ["pregnant", "गर्भवती", "प्रेग्नेंट", "गर्भ"],
+      "specialty": "obstetrics",
+      "urgency": 3,
+      "bed_type": "maternity"
+    },
+    {
+      "keywords": ["labor", "प्रसव", "डिलीवरी दर्द", "लेबर"],
+      "specialty": "obstetrics",
+      "urgency": 4,
+      "bed_type": "maternity"
+    },
+    {
+      "keywords": ["delivery", "डिलीवरी", "बच्चा होना"],
+      "specialty": "obstetrics",
+      "urgency": 4,
+      "bed_type": "maternity"
+    },
+    {
+      "keywords": ["antenatal", "एंटीनेटल", "प्रसवपूर्व"],
+      "specialty": "obstetrics",
+      "urgency": 2,
+      "bed_type": "maternity"
+    },
+    {
+      "keywords": ["suicidal", "आत्महत्या", "खुद को नुकसान", "जीना नहीं चाहता"],
+      "specialty": "psychiatry",
+      "urgency": 4,
+      "bed_type": "hdu"
+    },
+    {
+      "keywords": ["overdose", "ओवरडोज़", "दवाई ज़्यादा खा ली", "ज़हर खा लिया"],
+      "specialty": "emergency medicine",
+      "urgency": 4,
+      "bed_type": "hdu"
+    }
+  ],
+  "red_flags": [
+    "chest pain", "सीने में दर्द", "सीने का दर्द", "छाती में दर्द",
+    "sweating", "diaphoresis",
+    "heart attack", "दिल का दौरा", "हार्ट अटैक",
+    "cardiac arrest", "कार्डियक अरेस्ट",
+    "stroke", "स्ट्रोक", "ब्रेन अटैक", "मस्तिष्काघात",
+    "seizure", "दौरा", "मिर्गी का दौरा", "फिट आना",
+    "unconscious", "बेहोश", "अचेत",
+    "unresponsive", "कोई प्रतिक्रिया नहीं",
+    "not breathing", "सांस नहीं आ रही",
+    "difficulty breathing", "सांस लेने में तकलीफ",
+    "shortness of breath", "सांस फूलना",
+    "oxygen saturation", "ऑक्सीजन कम",
+    "head injury", "सिर में चोट",
+    "heavy bleeding", "बहुत ज़्यादा खून",
+    "paralysis", "लकवा",
+    "suicidal", "आत्महत्या"
+  ]
+}

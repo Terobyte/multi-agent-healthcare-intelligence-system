@@ -19,4 +19,4 @@ services:
         sync: false
       # ── Non-secret defaults (plain Environment is fine) ─────────────────────
       - key: VS_ENDPOINT
-        value: mubarak_vs   # override in dashboard if endpoint name changes
+        value: vs_healthcare   # Trial allows 1 endpoint; reusing vs_healthcare
