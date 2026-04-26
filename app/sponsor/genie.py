@@ -141,33 +141,56 @@ class GenieClient:
 
         sql = ""
         rows: list[Any] = []
+        columns: list[str] = []
         explanation = ""
 
         for att in (getattr(res, "attachments", None) or []):
+            attachment_id = getattr(att, "attachment_id", None)
+
             text_obj = getattr(att, "text", None)
             if text_obj is not None:
                 content_attr = getattr(text_obj, "content", None)
-                if content_attr:
+                if content_attr and not explanation:
                     explanation = content_attr
+
             query_obj = getattr(att, "query", None)
             if query_obj is not None:
                 stmt = getattr(query_obj, "statement", "") or ""
                 if stmt:
                     sql = stmt
-                    result = w.genie.get_message_query_result(
-                        space_id=self._space_id,
-                        conversation_id=conv_id,
-                        message_id=message_id,
-                    )
-                    stmt_resp = getattr(result, "statement_response", None)
+
+                # Genie spaces store the result under the attachment, not the
+                # message — get_message_query_result returns empty for these
+                # rooms, so use the attachment-scoped endpoint instead.
+                if attachment_id:
+                    try:
+                        result = w.genie.get_message_attachment_query_result(
+                            space_id=self._space_id,
+                            conversation_id=conv_id,
+                            message_id=str(message_id),
+                            attachment_id=attachment_id,
+                        )
+                    except Exception as exc:  # pragma: no cover — best-effort enrichment
+                        logger.warning(
+                            "genie attachment_query_result failed (%s); text-only response",
+                            type(exc).__name__,
+                        )
+                        result = None
+
+                    stmt_resp = getattr(result, "statement_response", None) if result else None
                     if stmt_resp is not None:
                         result_obj = getattr(stmt_resp, "result", None)
                         if result_obj is not None:
                             rows = getattr(result_obj, "data_array", None) or []
+                        manifest = getattr(stmt_resp, "manifest", None)
+                        schema = getattr(manifest, "schema", None) if manifest else None
+                        if schema is not None:
+                            columns = [c.name for c in (schema.columns or [])]
 
         return {
             "conversation_id": conv_id,
             "sql": sql,
+            "columns": columns,
             "rows": rows,
             "explanation": explanation,
             "source": "live",
