@@ -1,0 +1,10 @@
+{
+  "sendingHospitalId": "apollo-hyd",
+  "receivingHospitalIds": ["care-bglr", "fortis-del"],
+  "referralPreview": {
+    "patientTag": "Polytrauma / Respiratory Support",
+    "priority": "High",
+    "notes": "Urgent transfer with oxygen dependency and specialist requirement. Carry imaging bundle and blood panel."
+  },
+  "ambulanceEtaMinutes": 14
+}
