@@ -37,6 +37,18 @@ export default function DoctorCopilot() {
       setHospitals(hospitalResult.value.hospitals);
     }
 
+    if (nextData && nextHospitals.length > 0) {
+      const liveIds = new Set(nextHospitals.map((hospital) => hospital.id));
+      const matchingReceivingIds = nextData.receivingHospitalIds.filter((id) => liveIds.has(id));
+      if (matchingReceivingIds.length === 0) {
+        nextData = {
+          ...nextData,
+          sendingHospitalId: nextHospitals[0]?.id ?? nextData.sendingHospitalId,
+          receivingHospitalIds: nextHospitals.slice(1, 5).map((hospital) => hospital.id),
+        };
+      }
+    }
+
     // Reconcile sending hospital: if copilot returned an ID that's not in the
     // hospital list, fall back to first available so the <select> isn't orphan.
     if (nextHospitals.length > 0) {
@@ -52,6 +64,7 @@ export default function DoctorCopilot() {
     }
 
     if (nextData) {
+      setData(nextData);
       setSelectedReceivingId(nextData.receivingHospitalIds[0] ?? "");
     }
 

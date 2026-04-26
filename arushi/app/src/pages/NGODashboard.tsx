@@ -258,54 +258,61 @@ export default function NGODashboard() {
         </div>
 
         <div className="rounded-cg-card border border-white/[0.05] bg-[rgba(35,35,36,0.85)] p-3 backdrop-blur-cg-glass">
-          <MapContainer
-            center={[22.5, 79]}
-            zoom={5}
-            scrollWheelZoom={false}
-            className="h-[760px] w-full rounded-xl"
-            attributionControl={false}
-          >
-            <TileLayer
-              url="https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png"
-              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-            />
-            <FitToHospitals pins={data?.underservedPins ?? []} />
-            {(data?.underservedPins ?? []).map((pin, index) => {
-              const matched = specialty === "All" || pin.specialty === specialty;
-              return (
-                <Marker
-                  key={pin.id}
-                  position={[pin.lat, pin.lng]}
-                  icon={buildPinIcon(pin.specialty, matched, index)}
-                  // Faded pins shouldn't steal clicks while a filter is active —
-                  // user is explicitly hunting matched pins; greyed dots are
-                  // context, not interactive targets.
-                  interactive={matched}
-                >
-                  <Tooltip>
-                    PIN {pin.pin} · {pin.specialty}
-                  </Tooltip>
-                </Marker>
-              );
-            })}
-            {/* Severity radius rings — only on matched pins so the fade reads
-                cleanly. The ring colour stays severity-driven so high-severity
-                gaps still pop visually inside the matched set. */}
-            {(data?.underservedPins ?? [])
-              .filter((pin) => specialty === "All" || pin.specialty === specialty)
-              .map((pin) => (
-                <Circle
-                  key={`${pin.id}-radius`}
-                  center={[pin.lat, pin.lng]}
-                  radius={pin.severity === "high" ? 52000 : pin.severity === "medium" ? 38000 : 25000}
-                  pathOptions={{
-                    color: severityCircleColor(pin.severity),
-                    fillOpacity: 0.10,
-                    weight: 1,
-                  }}
-                />
-              ))}
-          </MapContainer>
+          <div className="relative min-h-[760px] overflow-hidden rounded-xl bg-[rgba(20,20,21,0.92)]">
+            <MapContainer
+              center={[22.5, 79]}
+              zoom={5}
+              scrollWheelZoom={false}
+              className="h-[760px] w-full"
+              attributionControl={false}
+            >
+              <TileLayer
+                url="https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png"
+                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+              />
+              <FitToHospitals pins={data?.underservedPins ?? []} />
+              {(data?.underservedPins ?? []).map((pin, index) => {
+                const matched = specialty === "All" || pin.specialty === specialty;
+                return (
+                  <Marker
+                    key={pin.id}
+                    position={[pin.lat, pin.lng]}
+                    icon={buildPinIcon(pin.specialty, matched, index)}
+                    // Faded pins shouldn't steal clicks while a filter is active —
+                    // user is explicitly hunting matched pins; greyed dots are
+                    // context, not interactive targets.
+                    interactive={matched}
+                  >
+                    <Tooltip>
+                      PIN {pin.pin} · {pin.specialty}
+                    </Tooltip>
+                  </Marker>
+                );
+              })}
+              {/* Severity radius rings — only on matched pins so the fade reads
+                  cleanly. The ring colour stays severity-driven so high-severity
+                  gaps still pop visually inside the matched set. */}
+              {(data?.underservedPins ?? [])
+                .filter((pin) => specialty === "All" || pin.specialty === specialty)
+                .map((pin) => (
+                  <Circle
+                    key={`${pin.id}-radius`}
+                    center={[pin.lat, pin.lng]}
+                    radius={pin.severity === "high" ? 52000 : pin.severity === "medium" ? 38000 : 25000}
+                    pathOptions={{
+                      color: severityCircleColor(pin.severity),
+                      fillOpacity: 0.10,
+                      weight: 1,
+                    }}
+                  />
+                ))}
+            </MapContainer>
+            {isLoading || (!data && errorMessage) ? (
+              <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-[rgba(20,20,21,0.72)] px-6 text-center text-sm text-cg-mist2">
+                {isLoading ? "Loading NGO coverage map..." : "NGO data unavailable. Check the panel on the left."}
+              </div>
+            ) : null}
+          </div>
         </div>
       </div>
     </motion.div>
