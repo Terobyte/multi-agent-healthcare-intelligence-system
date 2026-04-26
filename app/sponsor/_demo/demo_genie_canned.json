@@ -1,0 +1,39 @@
+{
+  "queries": [
+    {
+      "match_keywords": ["icu", "bed", "available"],
+      "sql": "SELECT facility_id, name, city, icu_beds_avail, trust_calibrated\nFROM workspace.default.gold_trust_final\nWHERE icu_beds_avail > 0\nORDER BY trust_calibrated DESC\nLIMIT 10",
+      "rows": [
+        ["5603", "Apollo Mumbai", "Mumbai", 4, 0.91],
+        ["8888", "Tata Memorial", "Mumbai", 2, 0.88],
+        ["959", "Fortis Bangalore", "Bangalore", 3, 0.84],
+        ["2672", "Manipal Whitefield", "Bangalore", 1, 0.79],
+        ["186", "AIIMS Delhi", "Delhi", 5, 0.95],
+        ["881", "Max Saket", "Delhi", 2, 0.81]
+      ],
+      "explanation": "Top facilities with ICU availability ranked by calibrated trust."
+    },
+    {
+      "match_keywords": ["trust", "calibrat", "above", "0.8", "high"],
+      "sql": "SELECT facility_id, name, city, trust_calibrated, trust_source\nFROM workspace.default.gold_trust_final\nWHERE trust_calibrated >= 0.80\nORDER BY trust_calibrated DESC",
+      "rows": [
+        ["186", "AIIMS Delhi", "Delhi", 0.95, "two-model-verified"],
+        ["5603", "Apollo Mumbai", "Mumbai", 0.91, "two-model-verified"],
+        ["8888", "Tata Memorial", "Mumbai", 0.88, "llm-verified"],
+        ["959", "Fortis Bangalore", "Bangalore", 0.84, "two-model-verified"],
+        ["881", "Max Saket", "Delhi", 0.81, "rule-inferred"]
+      ],
+      "explanation": "Facilities with calibrated trust >= 0.80, ordered by trust."
+    },
+    {
+      "match_keywords": ["cardiac", "cardiology", "heart"],
+      "sql": "SELECT facility_id, name, city, trust_calibrated\nFROM workspace.default.gold_trust_final\nWHERE array_contains(specialties, 'cardiology')\nORDER BY trust_calibrated DESC\nLIMIT 5",
+      "rows": [
+        ["5603", "Apollo Mumbai", "Mumbai", 0.91],
+        ["186", "AIIMS Delhi", "Delhi", 0.95],
+        ["959", "Fortis Bangalore", "Bangalore", 0.84]
+      ],
+      "explanation": "Cardiology-capable facilities ranked by calibrated trust."
+    }
+  ]
+}
