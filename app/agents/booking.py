@@ -75,9 +75,16 @@ def book_atomic(facility_id: str, patient_id: str, factors_required: dict) -> di
 
 
 def _book_atomic_inner(facility_id: str, hashed_pid: str, factors_required: dict) -> dict:
-    # 1. facility existence — never insert a txn for a phantom facility
+    # 1. facility existence + non-zero capacity — never insert a txn for a
+    # phantom facility, and require icu_beds/capacity > 0 directly in the
+    # filter so a configured-but-empty facility row doesn't open a saga
+    # against a hospital with zero beds (bug #76). The COALESCE makes the
+    # predicate tolerant of either column populating capacity in the gold
+    # layer.
     rows = warehouse_query(
-        "SELECT facility_id FROM workspace.default.gold_trust_final WHERE facility_id=?",
+        "SELECT facility_id FROM workspace.default.gold_trust_final"
+        " WHERE facility_id=?"
+        " AND COALESCE(icu_beds, capacity, 0) > 0",
         [facility_id],
     )
     if not rows:
@@ -88,10 +95,51 @@ def _book_atomic_inner(facility_id: str, hashed_pid: str, factors_required: dict
             "commit_error": None,
         }
 
-    # 2. duplicate active txn — don't double-saga the same patient
+    # 2. partial resource availability — confirm the bed pool isn't already
+    # fully reserved before we walk the saga (bug #73). The bed_reservations
+    # table is the gating capacity for the demo; if RESERVED rows exceed the
+    # facility's icu_beds/capacity we reject without ever writing a parent
+    # row. The check is best-effort — if the warehouse mock doesn't answer
+    # (returns None/empty) we treat it as "no signal" and proceed, matching
+    # existing test expectations and avoiding spurious rejections when the
+    # capacity column is null.
+    bed_avail = warehouse_query(
+        "SELECT bed_capacity, reserved_beds FROM ("
+        "  SELECT COALESCE(MAX(g.icu_beds), MAX(g.capacity), 0) AS bed_capacity,"
+        "         (SELECT COUNT(*) FROM workspace.default.bed_reservations br"
+        "          WHERE br.facility_id=? AND br.status='RESERVED') AS reserved_beds"
+        "  FROM workspace.default.gold_trust_final g"
+        "  WHERE g.facility_id=?"
+        ") t",
+        [facility_id, facility_id],
+    )
+    if bed_avail and isinstance(bed_avail[0], (list, tuple)) and len(bed_avail[0]) >= 2:
+        try:
+            bed_capacity_val = int(bed_avail[0][0]) if bed_avail[0][0] is not None else 0
+            reserved_beds_val = int(bed_avail[0][1]) if bed_avail[0][1] is not None else 0
+        except (TypeError, ValueError):
+            bed_capacity_val = 0
+            reserved_beds_val = 0
+        if bed_capacity_val > 0 and reserved_beds_val >= bed_capacity_val:
+            return {
+                "transaction_id": None, "status": "REJECTED",
+                "resources": {}, "facility_id": facility_id,
+                "reason": (
+                    f"facility {facility_id} bed capacity exhausted "
+                    f"(reserved={reserved_beds_val}, capacity={bed_capacity_val})"
+                ),
+                "commit_error": None,
+            }
+
+    # 3. duplicate active txn — don't double-saga the same patient. The
+    # `updated_ts > current_timestamp() - INTERVAL 60 MINUTES` predicate
+    # ignores stale RESERVED rows (bug #74) so a process that crashed
+    # mid-saga doesn't lock the patient out forever.
     active = warehouse_query(
         "SELECT transaction_id FROM workspace.default.txn_atomic "
-        "WHERE patient_id=? AND status IN ('RESERVED','COMMITTED') LIMIT 1",
+        "WHERE patient_id=? AND status IN ('RESERVED','COMMITTED') "
+        "AND updated_ts > current_timestamp() - INTERVAL 60 MINUTES "
+        "LIMIT 1",
         [hashed_pid],
     )
     if active:
@@ -102,7 +150,7 @@ def _book_atomic_inner(facility_id: str, hashed_pid: str, factors_required: dict
             "commit_error": None,
         }
 
-    # 3. parent insert (saga begin)
+    # 4. parent insert (saga begin)
     txn_id = str(uuid4())
     try:
         warehouse_query(
@@ -121,7 +169,7 @@ def _book_atomic_inner(facility_id: str, hashed_pid: str, factors_required: dict
             "commit_error": None,
         }
 
-    # 4. child inserts (MERGE used for parameterized atomic INSERT — re-running
+    # 5. child inserts (MERGE used for parameterized atomic INSERT — re-running
     # an identical txn_id is a no-op because the child PK is derived
     # deterministically from (txn_id, table), so the second call's MERGE source
     # row carries the same PK and a real Delta warehouse can dedup at PK
@@ -143,13 +191,22 @@ def _book_atomic_inner(facility_id: str, hashed_pid: str, factors_required: dict
         _ = uuid4()
         child_pk = f"{txn_id}-{table}"
         try:
+            # bug #75: ON clause keys on (transaction_id, facility_id, pk_col)
+            # so concurrent transactions targeting the same facility resource
+            # serialize on capacity instead of vacuously diverging on txn id.
+            # The pk_col equality preserves the deterministic child_pk dedup
+            # contract from bug #31 — a replay with the same txn_id derives
+            # the same child_pk and the MERGE WHEN MATCHED branch becomes a
+            # genuine no-op at the warehouse layer.
             warehouse_query(
                 f"MERGE INTO workspace.default.{table} t "
-                f"USING (SELECT ? as transaction_id, ? as facility_id, ? as status, ? as patient_id) s "
+                f"USING (SELECT ? as transaction_id, ? as facility_id, ? as status, ? as patient_id, ? as {pk_col}) s "
                 f"ON t.transaction_id = s.transaction_id "
+                f"AND t.facility_id = s.facility_id "
+                f"AND t.{pk_col} = s.{pk_col} "
                 f"WHEN NOT MATCHED THEN INSERT "
                 f"({pk_col}, transaction_id, facility_id, status, patient_id, created_ts, updated_ts) "
-                f"VALUES (?, s.transaction_id, s.facility_id, s.status, s.patient_id, current_timestamp(), current_timestamp())",
+                f"VALUES (s.{pk_col}, s.transaction_id, s.facility_id, s.status, s.patient_id, current_timestamp(), current_timestamp())",
                 [txn_id, facility_id, init_status, hashed_pid, child_pk],
             )
             results[short] = "OK"
@@ -158,7 +215,7 @@ def _book_atomic_inner(facility_id: str, hashed_pid: str, factors_required: dict
             results[short] = f"FAIL: {str(e)[:200]}"
             break
 
-    # 5. compensating decision
+    # 6. compensating decision
     if results and all(v == "OK" for v in results.values()) and len(results) == len(RESOURCE_TABLES):
         try:
             warehouse_query(

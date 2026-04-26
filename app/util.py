@@ -20,7 +20,7 @@ _DEV_SALT = "aarogyanet-dev-salt-do-not-use-in-prod"
 # `reset_salt_cache()` is the public knob for env rotation in long-running
 # processes (token refresh handlers, ops dashboards).
 _SALT_CACHE: str | None = None
-_SALT_CACHE_LOCK = threading.Lock()
+_salt_cache_lock = threading.Lock()
 
 
 def _resolve_salt() -> str:
@@ -49,7 +49,7 @@ def reset_salt_cache() -> None:
     process would keep hashing with the previous salt until restart.
     """
     global _SALT_CACHE
-    with _SALT_CACHE_LOCK:
+    with _salt_cache_lock:
         _SALT_CACHE = None
 
 
@@ -61,15 +61,16 @@ def _get_salt() -> str:
     immediately. Two concurrent first-callers will both fall through to the
     locked block, but the inner check guarantees only one runs _resolve_salt().
     """
+    global _SALT_CACHE
     cached = _SALT_CACHE
     if cached is not None:
         return cached
-    with _SALT_CACHE_LOCK:
+    with _salt_cache_lock:
         # Re-check under the lock — another thread may have populated it.
         if _SALT_CACHE is not None:
             return _SALT_CACHE
         salt = _resolve_salt()
-        globals()["_SALT_CACHE"] = salt
+        _SALT_CACHE = salt
         return salt
 
 

@@ -51,6 +51,9 @@ export default function ReasoningPanelSSE({ sessionId, useDemo }: Props) {
 
   useEffect(() => {
     if (!sessionId) return;
+    // Close any leftover connection from a prior StrictMode mount or HMR before
+    // opening a new one — otherwise the old socket lingers and leaks events.
+    esRef.current?.close();
     const url = useDemo ? SSE_DEMO_URL(sessionId) : SSE_URL(sessionId);
     let es: EventSource;
     try {
@@ -86,13 +89,13 @@ export default function ReasoningPanelSSE({ sessionId, useDemo }: Props) {
 
     AGENT_KINDS.forEach((k) => on(k, push(k) as EventListener));
 
-    const onDone = (ev: Event) => {
-      push("done")(ev as MessageEvent<string>);
+    const onDone = (ev: MessageEvent<string>) => {
+      push("done")(ev);
       setStatus("done");
       // Explicit done from server — no point keeping the connection open.
       es.close();
     };
-    on("done", onDone);
+    on("done", onDone as EventListener);
 
     // Network-level errors arrive as plain `Event` (no .data). EventSource has
     // built-in exponential reconnect, so DO NOT call es.close() here for
@@ -101,9 +104,14 @@ export default function ReasoningPanelSSE({ sessionId, useDemo }: Props) {
     // For server-sent `event: error` payloads (which carry .data), treat as
     // terminal: surface the message and close.
     const onError = (ev: Event) => {
-      const msg = ev as MessageEvent<string>;
-      if (typeof msg.data === "string" && msg.data.length > 0) {
-        push("error")(msg);
+      // Network-level errors are plain `Event` (no .data). Server-sent
+      // `event: error` payloads arrive as MessageEvent with a string `data`.
+      // Probe defensively rather than blindly casting.
+      const maybeData = "data" in ev ? (ev as { data?: unknown }).data : undefined;
+      if (typeof maybeData === "string" && maybeData.length > 0) {
+        // Build a synthetic MessageEvent-like wrapper for the push helper.
+        const messageLike: MessageEvent<string> = new MessageEvent("error", { data: maybeData });
+        push("error")(messageLike);
         setStatus("error");
         es.close();
         return;

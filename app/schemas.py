@@ -66,19 +66,19 @@ class IntakeHandshake(BaseModel):
     query: str = Field(max_length=2000)
     response: Literal["yes", "no"]
     signature: str = Field(max_length=2000)
-    latency_ms: int
+    latency_ms: int = Field(ge=0, le=2_147_483_647)
 
 
 class OutcomeFeedback(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    feedback_id: str = Field(default="", max_length=64)                    # auto-fill in /outcome handler if empty
+    feedback_id: Optional[str] = Field(default=None, max_length=64)        # auto-fill in /outcome handler if empty
     transaction_id: Optional[str] = Field(default=None, max_length=2000)   # null for NGO ping without booking
     patient_id: str = Field(max_length=64)
     facility_id: str = Field(max_length=64)
     factor: Literal["bed", "oxygen", "drug", "specialist"]
-    actual_value: float                      # 1.0 / 0.5 / 0.0 — DDL is DOUBLE, not bool
-    llm_predicted: Optional[float] = None
+    actual_value: float = Field(ge=0.0, le=1.0)                            # 1.0 / 0.5 / 0.0 — DDL is DOUBLE, not bool
+    llm_predicted: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     source: Literal["sms", "voice", "nurse_note", "ngo_visit"] = "sms"
     notes: Optional[str] = Field(default=None, max_length=2000)
     ts: datetime                             # ISO8601 → datetime, not str

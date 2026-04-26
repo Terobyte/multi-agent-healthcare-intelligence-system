@@ -81,7 +81,7 @@ export async function recommend(request: RecommendRequest): Promise<RecommendRes
 
   if (HAS_REAL_BACKEND) {
     try {
-      const resp = await canonicalApi.recommend(query);
+      const resp = await canonicalApi.recommend({ user_text: query, language: "en" });
       _degraded = false;
       _authError = false;
       let hospitals: Hospital[];
@@ -174,15 +174,18 @@ export async function reserve(request: ReserveRequest): Promise<ReserveResponse>
       reason: out.reason,
       // Normalize undefined → null so consumers can `?? "—"` cleanly.
       commit_error: out.commit_error ?? null,
-      transaction_id: out.transaction_id,
+      transaction_id: out.transaction_id ?? null,
       errorReason,
     };
   }
 
+  const referenceId = `RSV-${request.hospitalId.toUpperCase()}-${Date.now().toString().slice(-6)}`;
   await delay(650);
   return {
     success: true,
-    referenceId: `RSV-${request.hospitalId.toUpperCase()}-${Date.now().toString().slice(-6)}`,
+    referenceId,
+    status: "COMMITTED",
+    transaction_id: referenceId,
     commit_error: null,
     errorReason: null,
   };
@@ -219,6 +222,7 @@ export async function getNGODashboardData(): Promise<NGODashboardData> {
     } catch (err) {
       if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
         _authError = true;
+        _degraded = true;
         throw err;
       }
       // NGO data is an optional dashboard feed. Its fallback should not flip

@@ -48,7 +48,12 @@ function FitToHospitals({ hospitals }: { hospitals: Hospital[] }) {
   useEffect(() => {
     if (hospitals.length === 0) return;
     if (didFitRef.current) return;
-    const bounds = L.latLngBounds(hospitals.map((h) => [h.lat, h.lng]));
+    // NaN/Infinity from upstream feeds crashes L.latLngBounds — filter to finite pairs only.
+    const finitePoints = hospitals
+      .map((h): [number, number] => [h.lat, h.lng])
+      .filter(([lat, lng]) => Number.isFinite(lat) && Number.isFinite(lng));
+    if (finitePoints.length === 0) return;
+    const bounds = L.latLngBounds(finitePoints);
     // maxZoom 9 keeps Mumbai-area dense urban clusters readable instead of
     // over-zooming into a single pin when pad(0.25) collapses bounds.
     map.fitBounds(bounds.pad(0.25), { animate: true, maxZoom: 9 });

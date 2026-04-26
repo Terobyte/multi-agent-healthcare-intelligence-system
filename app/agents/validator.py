@@ -245,6 +245,13 @@ def validate(
         _caller_trust_cal = None
     # ---------------------------------------------------------------------
 
+    # bug #34: reject blank/empty facility_id BEFORE hitting warehouse_query.
+    # An empty string would still parameterize the SQL `WHERE facility_id = ?`,
+    # returning either a wrong row (if facility_id="" exists) or scanning the
+    # entire calibrated table — neither is meaningful, both cost a round-trip.
+    if not facility_id or not facility_id.strip():
+        raise ValueError("facility_id must be a non-empty string")
+
     row: Optional[dict] = None
     use_cal = True
 

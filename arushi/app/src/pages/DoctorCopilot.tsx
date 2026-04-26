@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import { Ambulance, ArrowRightLeft, FileText, Hospital, RefreshCw, Stethoscope } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getDoctorCopilotData, recommend } from "../lib/api";
 import type { DoctorCopilotData, Hospital as HospitalType } from "../lib/types";
 
@@ -88,16 +88,23 @@ export default function DoctorCopilot() {
 
   // If the data payload changes (e.g. retry/reload returns new ordering), make
   // sure the currently-selected receiving hospital still exists in the list.
+  // Read the current selection through a ref so the effect doesn't need to
+  // depend on `selectedReceivingId` (which would re-run on user clicks and
+  // trample intentional choices).
+  const selectedReceivingIdRef = useRef(selectedReceivingId);
+  useEffect(() => {
+    selectedReceivingIdRef.current = selectedReceivingId;
+  }, [selectedReceivingId]);
   useEffect(() => {
     if (!data) return;
     if (data.receivingHospitalIds.length === 0) {
-      if (selectedReceivingId !== "") setSelectedReceivingId("");
+      if (selectedReceivingIdRef.current !== "") setSelectedReceivingId("");
       return;
     }
-    if (!data.receivingHospitalIds.includes(selectedReceivingId)) {
+    if (!data.receivingHospitalIds.includes(selectedReceivingIdRef.current)) {
       setSelectedReceivingId(data.receivingHospitalIds[0] ?? "");
     }
-  }, [data, selectedReceivingId]);
+  }, [data]);
 
   // Guard: if the user changed sendingHospitalId via select but a backend
   // refresh removed that hospital, snap back to the first available option.
@@ -149,7 +156,7 @@ export default function DoctorCopilot() {
               {bothFailed ? (
                 <button
                   type="button"
-                  onClick={() => void load()}
+                  onClick={() => void load({ active: true })}
                   className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-[rgba(255,176,136,0.40)] bg-[rgba(255,176,136,0.20)] px-2.5 py-1 text-xs font-semibold text-cg-peach transition hover:bg-[rgba(255,176,136,0.28)]"
                 >
                   <RefreshCw size={12} />
@@ -209,7 +216,9 @@ export default function DoctorCopilot() {
                     }`}
                   >
                     <span>{hospital.name}</span>
-                    <span className="text-xs text-cg-mist3">{hospital.etaMinutes} min</span>
+                    <span className="text-xs text-cg-mist3">
+                      {hospital.etaMinutes != null ? `${hospital.etaMinutes}\u00a0min` : "—"}
+                    </span>
                   </motion.button>
                 ))}
               </div>

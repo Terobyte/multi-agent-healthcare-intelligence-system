@@ -16,10 +16,14 @@ canned response so the demo doesn't crash on a fresh laptop.
 """
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from app.agents.triage import triage as _triage_function
 from app.schemas import TriageOutput
+
+
+logger = logging.getLogger(__name__)
 
 
 try:
@@ -99,5 +103,32 @@ def run_triage(symptoms: str, language: str = "en") -> TriageOutput:
     Agent Framework ceremony lives in :class:`TriageResponsesAgent` for the
     log_model script; the route just calls the same underlying function so the
     sponsor path and Mubarak's path stay observably identical.
+
+    Defensive guarantees:
+    - blank/whitespace-only symptoms raise ``ValueError`` before the LLM call
+      so we never spend a Databricks token on noise
+    - any exception from the underlying triage function is converted to a
+      safe ``TriageOutput`` fallback so the sponsor route never returns 500
+      mid-demo
     """
-    return _triage_function(symptoms, language)
+    if symptoms is None or not symptoms.strip():
+        raise ValueError("symptoms is blank/empty; required input")
+
+    try:
+        return _triage_function(symptoms, language)
+    except Exception as exc:  # broad: triage ↔ Llama outage → safe fallback
+        logger.warning(
+            "sponsor triage failed (%s: %s); returning safe fallback",
+            type(exc).__name__,
+            exc,
+            exc_info=True,
+        )
+        return TriageOutput(
+            specialty="general medicine",
+            urgency=1,
+            confidence=0.0,
+            required_bed_type="general",
+            fast_path=False,
+            red_flag_match=[],
+            reasoning="error fallback: upstream triage unavailable",
+        )

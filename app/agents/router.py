@@ -140,6 +140,10 @@ _BASE_COST_BY_TRUST: list[tuple[float, int]] = [
     (0.5, 4000),   # mid trust  → semi-private
     (0.0, 1500),   # low trust  → public / PHC
 ]
+# bug #24: fallback when trust_score is negative (malformed / corrupted upstream).
+# Equals the lowest tier so cost remains a sensible non-negative number rather
+# than crashing the recommend pipeline with StopIteration.
+_DEFAULT_BASE_COST: int = _BASE_COST_BY_TRUST[-1][1]
 _TRAVEL_COST_INR_PER_KM = 15
 
 # ---------------------------------------------------------------------------
@@ -244,7 +248,13 @@ def _cost_estimate(trust_score: float, distance_km: float) -> tuple[int, int]:
     Medical cost is tiered by trust score (proxy for hospital tier).
     Non-medical cost is proportional to travel distance (ambulance + escort).
     """
-    base = next(b for thresh, b in _BASE_COST_BY_TRUST if trust_score >= thresh)
+    # bug #24: trust_score can be negative (corrupted upstream / probe data);
+    # the no-default next() raised StopIteration. Use the lowest-tier base cost
+    # as a defensive default so medical_cost is always a non-negative int.
+    base = next(
+        (b for thresh, b in _BASE_COST_BY_TRUST if trust_score >= thresh),
+        _DEFAULT_BASE_COST,
+    )
     travel_cost = max(0, round(distance_km * _TRAVEL_COST_INR_PER_KM))
     return base, travel_cost
 

@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { X } from "lucide-react";
-import { useEffect, useId, useRef } from "react";
+import { useCallback, useEffect, useId, useRef } from "react";
 import type { TrustEvidence } from "../lib/types";
 
 interface SourceModalProps {
@@ -38,12 +38,11 @@ export default function SourceModal({ open, title, evidence, details, onClose }:
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const dialogRef = useRef<HTMLDivElement | null>(null);
 
-  // Esc-to-close + body scroll lock + focus trap. Both attach only while
-  // open so background views stay scrollable normally and listeners don't leak.
-  useEffect(() => {
-    if (!open) return;
-
-    const onKey = (e: KeyboardEvent) => {
+  // Memoize the keydown handler so changing the parent's inline `onClose`
+  // doesn't tear down/re-register the listener every render. The handler
+  // calls onClose via a ref-stable closure inside a useCallback.
+  const handleKeyDown = useCallback(
+    (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
         onClose();
@@ -75,8 +74,16 @@ export default function SourceModal({ open, title, evidence, details, onClose }:
           }
         }
       }
-    };
-    window.addEventListener("keydown", onKey);
+    },
+    [onClose],
+  );
+
+  // Esc-to-close + body scroll lock + focus trap. Both attach only while
+  // open so background views stay scrollable normally and listeners don't leak.
+  useEffect(() => {
+    if (!open) return;
+
+    window.addEventListener("keydown", handleKeyDown);
 
     lockBodyScroll();
 
@@ -86,11 +93,11 @@ export default function SourceModal({ open, title, evidence, details, onClose }:
     }, 0);
 
     return () => {
-      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keydown", handleKeyDown);
       window.clearTimeout(focusTimer);
       unlockBodyScroll();
     };
-  }, [open, onClose]);
+  }, [open, handleKeyDown]);
 
   return (
     <AnimatePresence>

@@ -114,11 +114,11 @@ export const api = {
     call<HealthResponse>("GET", "/health", undefined, { signal }),
   triage: (user_text: string, language_hint = "en", signal?: AbortSignal) =>
     call<TriageOutput>("POST", "/triage", { user_text, language_hint }, { signal }),
-  recommend: (user_text: string, language_hint = "en", signal?: AbortSignal) =>
+  recommend: (req: { user_text: string; language?: string }, signal?: AbortSignal) =>
     call<CanonicalRecommendResponse>(
       "POST",
       "/recommend",
-      { user_text, language_hint },
+      { user_text: req.user_text, language: req.language ?? "en" },
       { signal },
     ),
   book: (facility_id: string, patient_id: string, signal?: AbortSignal) =>

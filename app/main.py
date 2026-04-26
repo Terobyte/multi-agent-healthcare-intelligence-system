@@ -9,9 +9,9 @@ import concurrent.futures
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from pathlib import Path
-from typing import Optional
+from typing import Annotated, Optional
 from uuid import uuid4
-from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel, Field
@@ -256,8 +256,13 @@ class BookRequest(BaseModel):
 
 @app.post("/book", response_model=BookingOutput, dependencies=[Depends(require_demo_key)])
 @limiter.limit("5/minute")
-def book(request: Request, req: BookRequest):
-    return BookingOutput(**book_atomic(req.facility_id, req.patient_id, {}))
+async def book(request: Request, req: BookRequest):
+    # bug #22: book_atomic is a synchronous DB saga (multiple warehouse_query
+    # round-trips). Calling it directly from a sync handler blocks the FastAPI
+    # event loop for the full saga duration. Offload via asyncio.to_thread so
+    # other concurrent requests can keep being served by the worker.
+    result = await asyncio.to_thread(book_atomic, req.facility_id, req.patient_id, {})
+    return BookingOutput(**result)
 
 
 @app.exception_handler(Exception)
@@ -287,8 +292,18 @@ def _evt(agent: str, token: str, trace_id: str) -> str:
     return f"event: {agent}\ndata: {json.dumps(payload)}\n\n"
 
 
+# bug #37: session_id is reflected back into log lines and SSE event payloads.
+# Without length/charset constraints a caller could inject newlines or control
+# chars (log injection) or send a megabyte-long string. Constrain to URL-safe
+# alphanumerics, underscore, and hyphen up to 64 chars.
+SessionId = Annotated[
+    str,
+    Query(max_length=64, pattern=r"^[A-Za-z0-9_-]+$"),
+]
+
+
 @app.get("/sse")
-async def sse(session_id: str, request: Request):
+async def sse(request: Request, session_id: SessionId):
     """SSE stream of agent reasoning. Event vocab: triage|extractor|validator|
     router|transfer|stream_tick|ping|done|error. Bug #13: aborts on disconnect.
     """
@@ -366,7 +381,7 @@ _DEMO_TRANSCRIPT = Path(__file__).parent / "agents" / "_demo_transcript.sse"
 
 
 @app.get("/sse_demo")
-async def sse_demo(session_id: str):
+async def sse_demo(session_id: SessionId):
     """Bug #14: always responds as text/event-stream — missing transcript
     becomes an SSE error frame, not an HTTPException 503."""
     async def gen():
@@ -486,62 +501,88 @@ async def outcome_route(request: Request, fb: OutcomeFeedback):
     if fb.ts < now - timedelta(days=30):
         raise HTTPException(status_code=422, detail="ts older than 30 days")
 
-    ok = await asyncio.to_thread(
-        warehouse_query,
-        "SELECT 1 FROM workspace.default.gold_trust_final WHERE facility_id=? LIMIT 1",
-        [fb.facility_id],
-    )
+    # bug #35: wrap each warehouse_query call so transient warehouse errors
+    # surface as a clear 503 service-unavailable instead of leaking through
+    # the global Exception handler as a generic 500. Frontend can then show
+    # an actionable "DB temporarily unavailable" message rather than "internal
+    # error" with no retry guidance.
+    try:
+        ok = await asyncio.to_thread(
+            warehouse_query,
+            "SELECT 1 FROM workspace.default.gold_trust_final WHERE facility_id=? LIMIT 1",
+            [fb.facility_id],
+        )
+    except Exception:
+        logger.exception("outcome_warehouse_query_failed step=facility_check facility=%s", fb.facility_id)
+        raise HTTPException(status_code=503, detail="warehouse unavailable: facility check failed")
     if not ok:
         raise HTTPException(status_code=422, detail=f"facility {fb.facility_id} not in gold_trust_final")
 
     if fb.transaction_id:
-        tx = await asyncio.to_thread(
-            warehouse_query,
-            "SELECT 1 FROM workspace.default.txn_atomic WHERE transaction_id=? LIMIT 1",
-            [fb.transaction_id],
-        )
+        try:
+            tx = await asyncio.to_thread(
+                warehouse_query,
+                "SELECT 1 FROM workspace.default.txn_atomic WHERE transaction_id=? LIMIT 1",
+                [fb.transaction_id],
+            )
+        except Exception:
+            logger.exception("outcome_warehouse_query_failed step=txn_check txn=%s", fb.transaction_id)
+            raise HTTPException(status_code=503, detail="warehouse unavailable: transaction check failed")
         if not tx:
             raise HTTPException(status_code=422, detail=f"transaction {fb.transaction_id} not found")
 
     if fb.feedback_id:
         fid = fb.feedback_id
     else:
-        key = f"{fb.patient_id}|{fb.facility_id}|{fb.factor}|{fb.ts.isoformat()}"
+        # bug #77: strip ASCII control characters out of the hash input. Otherwise
+        # adversarial patient_id/factor strings carrying \x00-\x1f could shift the
+        # hash via invisible chars, letting one logical feedback row register
+        # under multiple feedback_id slots.
+        raw_key = f"{fb.patient_id}|{fb.facility_id}|{fb.factor}|{fb.ts.isoformat()}"
+        key = re.sub(r"[\x00-\x1f]", "", raw_key)
         fid = f"fb_{hashlib.sha256(key.encode()).hexdigest()[:12]}"
 
     # Check BEFORE the MERGE so "already_recorded" is meaningful.
     # Post-MERGE check is always truthy regardless of whether we inserted.
-    pre_existing = await asyncio.to_thread(
-        warehouse_query,
-        "SELECT 1 FROM workspace.default.outcome_feedback WHERE feedback_id=? LIMIT 1",
-        [fid],
-    )
+    try:
+        pre_existing = await asyncio.to_thread(
+            warehouse_query,
+            "SELECT 1 FROM workspace.default.outcome_feedback WHERE feedback_id=? LIMIT 1",
+            [fid],
+        )
+    except Exception:
+        logger.exception("outcome_warehouse_query_failed step=pre_existing_check fid=%s", fid)
+        raise HTTPException(status_code=503, detail="warehouse unavailable: feedback lookup failed")
     is_new = not pre_existing
 
-    await asyncio.to_thread(
-        warehouse_query,
-        """
-        MERGE INTO workspace.default.outcome_feedback t
-        USING (SELECT
-                 ? AS feedback_id, ? AS transaction_id, ? AS patient_id, ? AS facility_id,
-                 ? AS factor, CAST(? AS DOUBLE) AS actual_value,
-                 CAST(? AS DOUBLE) AS llm_predicted, ? AS source,
-                 ? AS notes, CAST(? AS TIMESTAMP) AS ts) s
-        ON t.feedback_id = s.feedback_id
-        WHEN NOT MATCHED THEN INSERT
-          (feedback_id, transaction_id, patient_id, facility_id, factor, actual_value,
-           llm_predicted, source, notes, ts)
-        VALUES
-          (s.feedback_id, s.transaction_id, s.patient_id, s.facility_id, s.factor,
-           s.actual_value, s.llm_predicted, s.source, s.notes, s.ts)
-        """,
-        [
-            fid, fb.transaction_id, fb.patient_id, fb.facility_id,
-            fb.factor, fb.actual_value, fb.llm_predicted,
-            fb.source, fb.notes,
-            fb.ts.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
-        ],
-    )
+    try:
+        await asyncio.to_thread(
+            warehouse_query,
+            """
+            MERGE INTO workspace.default.outcome_feedback t
+            USING (SELECT
+                     ? AS feedback_id, ? AS transaction_id, ? AS patient_id, ? AS facility_id,
+                     ? AS factor, CAST(? AS DOUBLE) AS actual_value,
+                     CAST(? AS DOUBLE) AS llm_predicted, ? AS source,
+                     ? AS notes, CAST(? AS TIMESTAMP) AS ts) s
+            ON t.feedback_id = s.feedback_id
+            WHEN NOT MATCHED THEN INSERT
+              (feedback_id, transaction_id, patient_id, facility_id, factor, actual_value,
+               llm_predicted, source, notes, ts)
+            VALUES
+              (s.feedback_id, s.transaction_id, s.patient_id, s.facility_id, s.factor,
+               s.actual_value, s.llm_predicted, s.source, s.notes, s.ts)
+            """,
+            [
+                fid, fb.transaction_id, fb.patient_id, fb.facility_id,
+                fb.factor, fb.actual_value, fb.llm_predicted,
+                fb.source, fb.notes,
+                fb.ts.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+            ],
+        )
+    except Exception:
+        logger.exception("outcome_warehouse_query_failed step=merge fid=%s", fid)
+        raise HTTPException(status_code=503, detail="warehouse unavailable: feedback merge failed")
 
     return {"status": "recorded" if is_new else "already_recorded", "feedback_id": fid}
 
@@ -569,6 +610,12 @@ LIMIT 250
 """
 
 _ngo_cache: dict = {}
+# bug #36: serialize cache misses so concurrent /ngo-data callers don't all
+# stampede the warehouse with the same expensive aggregate query during the
+# 5-minute TTL gap. Inside the lock we re-check the cache so only the first
+# coroutine pays the round-trip; everyone else returns the freshly populated
+# data.
+_ngo_cache_lock = asyncio.Lock()
 
 
 @app.get("/ngo-data")
@@ -580,68 +627,77 @@ async def ngo_data_endpoint(request: Request):
         cached["cached"] = True
         return cached
 
-    try:
-        rows = await asyncio.to_thread(warehouse_query, _NGO_QUERY, [])
-    except Exception:
-        logger.exception("ngo_data_query_failed")
-        rows = []
+    async with _ngo_cache_lock:
+        # Double-check under the lock: another coroutine may have populated
+        # the cache while we were waiting to enter the critical section.
+        now_ts = time.time()
+        if _ngo_cache.get("ts", 0) + 300 > now_ts and "data" in _ngo_cache:
+            cached = dict(_ngo_cache["data"])
+            cached["cached"] = True
+            return cached
 
-    specialty_cols = [
-        ("Cardiac",   2),
-        ("Trauma",    3),
-        ("Pediatric", 4),
-        ("Neuro",     5),
-    ]
+        try:
+            rows = await asyncio.to_thread(warehouse_query, _NGO_QUERY, [])
+        except Exception:
+            logger.exception("ngo_data_query_failed")
+            rows = []
 
-    pins = []
-    state_desert_count: dict[str, int] = {}
+        specialty_cols = [
+            ("Cardiac",   2),
+            ("Trauma",    3),
+            ("Pediatric", 4),
+            ("Neuro",     5),
+        ]
 
-    for r in (rows or []):
-        pincode  = str(r[0]) if r[0] is not None else ""
-        state    = str(r[1]) if r[1] is not None else "Unknown"
-        n_fac    = int(r[6]) if r[6] is not None else 0
-        is_desert = r[7] is True or r[7] == "true"
-        avg_lat  = float(r[8]) if r[8] is not None else None
-        avg_lon  = float(r[9]) if r[9] is not None else None
-        if avg_lat is None or avg_lon is None:
-            continue
+        pins = []
+        state_desert_count: dict[str, int] = {}
 
-        for specialty, col_idx in specialty_cols:
-            n_spec = int(r[col_idx]) if r[col_idx] is not None else 0
-            if n_spec > 0:
+        for r in (rows or []):
+            pincode  = str(r[0]) if r[0] is not None else ""
+            state    = str(r[1]) if r[1] is not None else "Unknown"
+            n_fac    = int(r[6]) if r[6] is not None else 0
+            is_desert = r[7] is True or r[7] == "true"
+            avg_lat  = float(r[8]) if r[8] is not None else None
+            avg_lon  = float(r[9]) if r[9] is not None else None
+            if avg_lat is None or avg_lon is None:
                 continue
-            severity = "high" if is_desert else ("medium" if n_fac < 3 else "low")
-            pop_gap = max(500, (6 - min(n_fac, 5)) * 8000)
-            pins.append({
-                "id": f"{pincode}_{specialty}",
-                "pin": pincode,
-                "specialty": specialty,
-                "severity": severity,
-                "lat": avg_lat,
-                "lng": avg_lon,
-                "populationGap": pop_gap,
-            })
-            if is_desert:
-                state_desert_count[state] = state_desert_count.get(state, 0) + 1
 
-    dead_zones = [
-        {
-            "id": f"dz_{state.replace(' ', '_').lower()}",
-            "label": f"{state} — {count} desert PINs",
-            "description": f"{count} pincodes in {state} lack trusted facilities for critical specialties.",
+            for specialty, col_idx in specialty_cols:
+                n_spec = int(r[col_idx]) if r[col_idx] is not None else 0
+                if n_spec > 0:
+                    continue
+                severity = "high" if is_desert else ("medium" if n_fac < 3 else "low")
+                pop_gap = max(500, (6 - min(n_fac, 5)) * 8000)
+                pins.append({
+                    "id": f"{pincode}_{specialty}",
+                    "pin": pincode,
+                    "specialty": specialty,
+                    "severity": severity,
+                    "lat": avg_lat,
+                    "lng": avg_lon,
+                    "populationGap": pop_gap,
+                })
+                if is_desert:
+                    state_desert_count[state] = state_desert_count.get(state, 0) + 1
+
+        dead_zones = [
+            {
+                "id": f"dz_{state.replace(' ', '_').lower()}",
+                "label": f"{state} — {count} desert PINs",
+                "description": f"{count} pincodes in {state} lack trusted facilities for critical specialties.",
+            }
+            for state, count in sorted(state_desert_count.items(), key=lambda x: -x[1])
+        ][:6]
+
+        data = {
+            "specialties": ["Trauma", "Cardiac", "Neuro", "Pediatric"],
+            "underservedPins": pins[:200],
+            "deadZones": dead_zones,
+            "cached": False,
         }
-        for state, count in sorted(state_desert_count.items(), key=lambda x: -x[1])
-    ][:6]
-
-    data = {
-        "specialties": ["Trauma", "Cardiac", "Neuro", "Pediatric"],
-        "underservedPins": pins[:200],
-        "deadZones": dead_zones,
-        "cached": False,
-    }
-    _ngo_cache["data"] = data
-    _ngo_cache["ts"] = now_ts
-    return data
+        _ngo_cache["data"] = data
+        _ngo_cache["ts"] = now_ts
+        return data
 
 
 # Sponsor stack — feature-flagged routes that wrap existing agents for the

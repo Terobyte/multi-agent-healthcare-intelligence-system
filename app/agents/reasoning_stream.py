@@ -57,10 +57,11 @@ async def stream_endpoint(endpoint: str, messages: list):
                         continue
                     yield payload
             except asyncio.CancelledError:
-                # Consumer (FastAPI SSE handler) has gone away — close the
-                # upstream httpx body cleanly so the underlying TCP socket isn't
-                # leaked into the connection pool half-read, then re-raise so
-                # the runtime can finish task cancellation properly.
+                # bug #71: rely on the surrounding `async with` blocks
+                # (`cli.stream(...)` and the outer `httpx.AsyncClient(...)`)
+                # to close the response and release the connection during
+                # unwind. Manually closing it here as well caused redundant
+                # double-close on the same response, which produced
+                # "Cannot send when the transport is closed" warnings.
                 logger.info("llm_stream_cancelled endpoint=%s", endpoint)
-                await resp.aclose()
                 raise

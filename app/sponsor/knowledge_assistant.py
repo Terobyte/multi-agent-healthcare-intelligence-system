@@ -39,11 +39,19 @@ _CORPUS_PATH: Path = Path(__file__).parent.parent / "agents" / "symptom_corpus.j
 
 
 def _load_corpus() -> list[dict[str, Any]]:
+    """Load the symptom corpus.
+
+    Raises ``RuntimeError`` if the corpus file is missing/corrupt/malformed —
+    callers can distinguish a broken data source from a successful retrieval
+    that simply found no matches. The :class:`KnowledgeAssistantStub` init
+    catches this so the demo never hard-crashes at import time, but the
+    function itself surfaces the failure honestly.
+    """
     try:
         return json.loads(_CORPUS_PATH.read_text())["corpus"]
-    except (FileNotFoundError, json.JSONDecodeError, KeyError) as exc:
+    except (FileNotFoundError, json.JSONDecodeError, KeyError, OSError) as exc:
         logger.warning("symptom corpus unavailable: %s", exc)
-        return []
+        raise RuntimeError(f"symptom corpus unavailable: {exc}") from exc
 
 
 def _keyword_match(symptom_text: str, corpus: list[dict[str, Any]], k: int = 5) -> list[dict[str, Any]]:
@@ -52,23 +60,34 @@ def _keyword_match(symptom_text: str, corpus: list[dict[str, Any]], k: int = 5) 
     Mirrors the existing keyword fallback in :mod:`app.agents.triage` so the
     stub returns the same kind of result the real KA endpoint would (relevance-
     ranked symptom→specialty mappings).
+
+    Rows whose ``urgency`` cannot be coerced to ``int`` (e.g. legacy "red"
+    sentinel values from older corpus versions) are skipped rather than
+    propagated — a single malformed row must not crash retrieval.
     """
     text_lower = symptom_text.lower()
-    scored: list[tuple[int, dict[str, Any]]] = []
+    scored: list[tuple[int, int, dict[str, Any]]] = []
     for entry in corpus:
         score = sum(1 for kw in entry.get("keywords", []) if kw.lower() in text_lower)
-        if score > 0:
-            scored.append((score, entry))
-    scored.sort(key=lambda x: (-x[0], -int(x[1].get("urgency", 0))))
+        if score <= 0:
+            continue
+        raw_urgency = entry.get("urgency", 0)
+        try:
+            urgency_int = int(raw_urgency)
+        except (TypeError, ValueError):
+            logger.debug("skipping corpus row with non-numeric urgency: %r", raw_urgency)
+            continue
+        scored.append((score, urgency_int, entry))
+    scored.sort(key=lambda x: (-x[0], -x[1]))
     return [
         {
             "text": ", ".join(e.get("keywords", [])[:3]),
             "specialty": e.get("specialty", ""),
-            "urgency": e.get("urgency", 0),
+            "urgency": urgency_int,
             "bed_type": e.get("bed_type", ""),
             "score": float(score),
         }
-        for score, e in scored[:k]
+        for score, urgency_int, e in scored[:k]
     ]
 
 
@@ -81,7 +100,14 @@ class KnowledgeAssistantStub:
     """
 
     def __init__(self) -> None:
-        self._corpus = _load_corpus()
+        # _load_corpus now raises RuntimeError on a broken source so callers
+        # who care can distinguish broken from no-match. The stub itself
+        # degrades to an empty corpus so the demo never crashes at import time.
+        try:
+            self._corpus = _load_corpus()
+        except RuntimeError as exc:
+            logger.warning("KA stub starting with empty corpus: %s", exc)
+            self._corpus = []
 
     def retrieve(self, symptom_text: str, *, k: int = 5) -> dict[str, Any]:
         if flags.SPONSOR_KA and not flags.SAFE_DEMO:
