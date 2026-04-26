@@ -1,16 +1,19 @@
 {
   "queries": [
     {
-      "match_keywords": ["bihar", "appendectomy", "appendix", "rural", "emergency", "surgery", "part-time", "part time"],
-      "sql": "SELECT g.facility_id, g.name, g.city, g.state, g.pin,\n       ROUND(g.trust_calibrated, 3) AS trust,\n       g.trust_source,\n       array_contains(g.specialties, 'general_surgery') AS has_surgery,\n       g.staff_pattern\nFROM workspace.default.gold_trust_final g\nWHERE g.state = 'Bihar'\n  AND array_contains(g.specialties, 'general_surgery')\n  AND array_contains(g.capabilities, 'emergency_24x7')\n  AND g.staff_pattern IN ('part_time', 'mixed')\nORDER BY g.trust_calibrated DESC\nLIMIT 5",
+      "match_keywords": ["bihar", "appendectomy", "appendix", "rural", "emergency", "surgery", "part-time", "part time", "generalsurgery", "general surgery"],
+      "sql": "SELECT g.facility_id, g.name, g.city, g.pincode, g.facility_type,\n       ROUND(g.trust_score, 3) AS trust,\n       g.trust_source,\n       g.capacity\nFROM workspace.default.gold_trust_final g\nWHERE g.state = 'Bihar'\n  AND g.facility_type = 'hospital'\n  AND array_contains(g.specialties, 'generalSurgery')\nORDER BY g.trust_score DESC\nLIMIT 8",
       "rows": [
-        ["BR_4421", "Mahavir Cancer Sansthan & Research Centre", "Patna", "Bihar", "800014", 0.812, "two-model-verified", true, "mixed"],
-        ["BR_2188", "Indira Gandhi Institute of Medical Sciences", "Patna", "Bihar", "800014", 0.789, "two-model-verified", true, "mixed"],
-        ["BR_8074", "Paras HMRI Hospital", "Patna", "Bihar", "800001", 0.741, "llm-verified", true, "part_time"],
-        ["BR_3306", "Anugrah Narayan Magadh Medical College", "Gaya", "Bihar", "823001", 0.624, "rule-inferred", true, "part_time"],
-        ["BR_5519", "Sadar Hospital Bhagalpur", "Bhagalpur", "Bihar", "812001", 0.581, "rule-inferred", true, "part_time"]
+        ["5983", "Jalal Medical Center", "Motihari", "845401", "hospital", 0.813, "two-model-verified", null],
+        ["4351", "Dr. Siddhi Vinayak Institute of Medical Science", "Patna", "801503", "hospital", 0.775, "two-model-verified", null],
+        ["1754", "Braham Jyoti Hospital", "Hajipur", "844101", "hospital", 0.675, "models-disagree", 100],
+        ["6108", "Jeeva Hospital", "Patna", "800020", "hospital", 0.675, "two-model-verified", null],
+        ["7726", "Neuron Hospital Patna", "Patna", "800001", "hospital", 0.653, "rule-inferred", null],
+        ["6041", "Jans Hospitall", "Motihari", "845437", "hospital", 0.653, "rule-inferred", 50],
+        ["4106", "Dr. R K Thakur Hospital", "Gopalganj", "841428", "hospital", 0.65, "models-disagree", 40],
+        ["7453", "Medicity Hospital", "Katihar", "854109", "hospital", 0.625, "two-model-verified", null]
       ],
-      "explanation": "5 facilities in Bihar with general surgery + 24/7 emergency capability + part-time/mixed staffing pattern. Top 2 are two-model-verified (Llama 3.3 + Llama 4 Maverick agreed within 0.20). Patna concentrates 3 of 5 — the 2 outside (Gaya, Bhagalpur) are the only viable rural-Bihar appendectomy options for that staffing profile."
+      "explanation": "8 hospitals in Bihar with generalSurgery specialty (clinics filtered out). Top 4 distribute Patna 2 + rural Bihar 2 (Motihari, Hajipur). 5 of 8 carry two-model-verified or models-disagree status — Llama 3.3 + Llama 4 Maverick processed them. Two flagged 'models-disagree' — surfaced to the user as 'requires human review' rather than silently averaged."
     },
     {
       "match_keywords": ["desert", "oncology", "no oncology", "zero oncology", "gap", "underserved", "ngo"],

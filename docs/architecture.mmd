@@ -1,0 +1,93 @@
+%% AarogyaNet — Agentic Healthcare Maps · Challenge 3 (Databricks)
+%% Mirror of Databricks AiChemy supervisor pattern (4 named sub-agents)
+%% Render at: https://mermaid.live or any GitHub markdown viewer
+
+flowchart TB
+    classDef user fill:#0F0703,stroke:#87A878,color:#F5E9DD
+    classDef ui fill:#0F0703,stroke:#87A878,color:#F5E9DD
+    classDef api fill:#1A0E07,stroke:#FF3621,color:#FFB088,stroke-width:2px
+    classDef agent fill:#0F0703,stroke:#FFB088,color:#F5E9DD
+    classDef gold fill:#0F0703,stroke:#FFB088,color:#F5E9DD
+    classDef vs fill:#0F0703,stroke:#FFB088,color:#FFB088
+    classDef fm fill:#0F0703,stroke:#FFB088,color:#FFB088
+    classDef sponsor fill:#1A0E07,stroke:#FF3621,color:#F5E9DD,stroke-dasharray:5 3
+
+    %% Users
+    P[Patient<br/>Hindi/Urdu voice]:::user
+    N[NGO Planner]:::user
+    D[Clinician]:::user
+
+    %% Frontend
+    PF[PatientFlow<br/>React/Vite/Leaflet]:::ui
+    ND[NGO Dashboard<br/>+ Genie Panel]:::ui
+    DC[Doctor Copilot<br/>Referral RAG]:::ui
+
+    %% API gateway
+    API["FastAPI · Railway<br/>/triage  /recommend  /book  /outcome  /sse  /ngo-data<br/>/sponsor/triage  /sponsor/genie/query  /sponsor/narrate"]:::api
+
+    %% Agents (mirror AiChemy)
+    subgraph Agents["Mosaic AI Agent Framework — Supervisor Pattern (mirrors Databricks AiChemy)"]
+        direction LR
+        T[TriageAgent<br/>A1 · Knowledge Assistant<br/>symptom → specialty + urgency]:::agent
+        R[RouterAgent<br/>A2 · Genie wrapper<br/>P_bed × travel × specialty × trust]:::agent
+        B[BookingSaga<br/>A3 · UC Function · ACID<br/>bed + ambulance + doctor + drug]:::agent
+        V[ValidatorAgent<br/>A4 · Self-Correction<br/>Llama 3.3 vs Llama 4 consensus]:::agent
+    end
+
+    %% Lakehouse
+    subgraph Lakehouse["Databricks Data Intelligence Platform · Unity Catalog"]
+        direction TB
+        BR[Bronze<br/>vf_hackathon_dataset_india_large · 10,000 raw]:::gold
+        SI[Silver<br/>silver_facilities · silver_facilities_text]:::gold
+        GO["Gold<br/>gold_trust_final · 9,738 rule + 139 verified + 110 disagree<br/>gold_trust_two_model · disagreement scores<br/>gold_pin_capabilities · is_specialty_desert<br/>v_trust_calibrated · outcome-adjusted<br/>outcome_feedback · txn_atomic + 4 saga tables"]:::gold
+
+        VS["Mosaic AI Vector Search · vs_healthcare<br/>symptom_corpus_idx · DELTA_SYNC<br/>silver_facilities_text_idx · BGE-large"]:::vs
+
+        FM["Foundation Model APIs · 20 endpoints<br/>Llama 3.3 70B · Llama 4 Maverick · GPT-5.x · BGE-large<br/>No egress · in-platform serving"]:::fm
+
+        GE["Genie Space · NL → SQL<br/>Healthcare Trust Analytics<br/>space_id 01f1414f...afe0c"]:::fm
+
+        BR --> SI --> GO
+    end
+
+    %% Databricks-only sponsor surfaces
+    subgraph Sponsor["Databricks Sponsor Surfaces · Flag-gated · SAFE_DEMO Kill-switch"]
+        direction LR
+        AB[Agent Bricks<br/>MLflow ResponsesAgent]:::sponsor
+        ML[MLflow 3 Tracing<br/>step-level + cost]:::sponsor
+        KA[Knowledge Assistant<br/>JSON corpus stub]:::sponsor
+        UC[Unity Catalog<br/>governance + PII salt]:::sponsor
+    end
+
+    %% Third-party voice — NOT a sponsor surface
+    VO["3rd-party · Fish Audio TTS<br/>Hindi/Urdu narration · pre-baked"]:::sponsor
+
+    %% Flows
+    P --> PF
+    N --> ND
+    D --> DC
+
+    PF --> API
+    ND --> API
+    DC --> API
+
+    API --> T
+    API --> R
+    API --> B
+    API --> V
+
+    T --> VS
+    T --> FM
+    R --> GO
+    R --> GE
+    B --> GO
+    V --> FM
+    V --> GO
+
+    AB -.-> T
+    ML -.-> Agents
+    KA -.-> T
+    VO -.-> B
+
+    %% SSE
+    API -. "SSE reasoning stream<br/>15s heartbeat · disconnect-aware" .-> PF
