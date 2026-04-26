@@ -4,7 +4,14 @@
 Use during dry-run rehearsal: confirms data layer is healthy and the demo lines hold.
 Run: python3 scripts/databricks/smoke_test.py
 """
-import json, os, subprocess, sys, time
+import json, os, signal, subprocess, sys, time
+
+# default SIGPIPE so `smoke_test.py | head -N` exits cleanly instead of dumping
+# a BrokenPipeError traceback (Block 1 in requirements.md uses `| head -5`).
+try:
+    signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+except (AttributeError, ValueError):
+    pass  # Windows or restricted env
 
 WH = os.environ.get("DBX_WH", "10fff96dd6d936b5")
 PROFILE = os.environ.get("DBX_PROFILE", "tero2")
