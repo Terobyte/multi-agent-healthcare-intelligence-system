@@ -13,13 +13,13 @@
 --      → calibrated_trust caps from 0.831 down to ~0.43
 --      "the system catches an over-optimistic LLM and self-corrects from outcomes"
 --
--- facility map:
---   5603 = INHS Sanjivani, Kochi (trust 0.90, top LLM-verified)
---   2672 = Delhi Liver Transplant (trust 0.875)
---   186  = Aadit Eye Hospital, Ahmedabad (trust 0.837)
---   959  = Aradhna Super Speciality + Trauma Centre, Shamli UP (trust 0.825) — calibration arc
---   881  = Apex Eye Care, Cuttack (trust 0.825)
---   8888 = synthetic FAILED facility for the rollback story
+-- facility map (trust shown is post-two-model-blend, gold_trust_final.trust_score):
+--   5603 = INHS Sanjivani, Kochi (trust 0.888, two-model-verified)
+--   2672 = Delhi Liver Transplant (trust 0.863, two-model-verified)
+--   959  = Aradhna Super Speciality + Trauma Centre, Shamli UP (trust 0.831, two-model-verified) — calibration arc
+--   881  = Apex Eye Care, Cuttack (trust 0.825, two-model-verified)
+--   186  = Aadit Eye Hospital, Ahmedabad (trust 0.425, models-disagree — used for the disagreement story)
+--   8888 = synthetic FAILED facility for the rollback story (rule-inferred)
 
 -- 5 successful + 1 rolled-back atomic bookings
 INSERT OVERWRITE workspace.default.txn_atomic VALUES

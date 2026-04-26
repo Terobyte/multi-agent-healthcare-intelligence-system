@@ -30,6 +30,12 @@ CREATE OR REPLACE TABLE workspace.default.outcome_feedback (
 -- n_outcomes ≥ 5 → reliable; below that, fall back to llm/rule trust
 -- this view is used by the Trust Layer to cap ceiling: trust_score = min(llm_trust, reputation_ceiling)
 
+-- design note on two-level aggregation:
+-- we AVG per (facility, factor) first, then AVG across factors.
+-- this gives equal weight to every factor (bed/oxygen/drug/specialist) regardless
+-- of how many pings a hospital got per factor. without per-factor first, a hospital
+-- with 10 bed pings + 1 specialist ping would let the bed signal drown out specialist.
+-- intentional — do not collapse to a flat AVG(actual_value) across all rows.
 CREATE OR REPLACE VIEW workspace.default.v_agent_reputation AS
 WITH per_facility AS (
   SELECT
@@ -44,7 +50,7 @@ WITH per_facility AS (
 )
 SELECT
   facility_id,
-  -- aggregate across all 4 factors
+  -- aggregate across all 4 factors (equal-weight per factor, see note above)
   SUM(n_outcomes)                                                AS total_outcomes,
   ROUND(AVG(observed_rate), 3)                                   AS reputation_score,
   -- per-factor breakdown for explainability

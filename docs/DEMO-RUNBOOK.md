@@ -31,8 +31,8 @@ Expected:
 | trust_source | n | avg_trust |
 |---|---|---|
 | rule-inferred | 9738 | 0.607 |
-| models-disagree | 169 | 0.589 |
-| two-model-verified | 80 | 0.695 |
+| two-model-verified | 139 | 0.725 |
+| models-disagree | 110 | 0.524 |
 | llm-verified | 13 | 0.648 |
 
 Then:
@@ -134,7 +134,7 @@ ORDER BY trust_score DESC LIMIT 5;
 
 ## 7. Closing (30s)
 
-> "So in summary: we have **80 hospitals two-model-verified**, **169 flagged for human review**, **5 atomic bookings completed**, **18 patient outcome pings**, and a **NGO desert map covering 3,736 PIN codes**. All of it on Databricks — Delta tables, Foundation Model APIs, Vector Search, all native. Reproducible from scratch in 5 minutes via `scripts/databricks/00→10`."
+> "So in summary: we have **139 hospitals two-model-verified**, **110 flagged for human review**, **5 atomic bookings completed**, **18 patient outcome pings**, and a **NGO desert map covering 3,736 PIN codes**. All of it on Databricks — Delta tables, Foundation Model APIs, Vector Search, all native. Reproducible from scratch in 5 minutes via `scripts/databricks/00→10`."
 
 ---
 
