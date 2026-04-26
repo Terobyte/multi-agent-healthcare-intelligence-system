@@ -4,6 +4,9 @@ from functools import lru_cache
 from typing import Optional
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from app.agents.booking import book_atomic
+from app.schemas import BookingOutput
 from app.settings import settings
 import mlflow.deployments
 
@@ -71,3 +74,13 @@ def health():
         "fm_endpoints": n,
         "warehouse": "configured" if settings.databricks_warehouse_id else "missing",
     }
+
+
+class BookRequest(BaseModel):
+    facility_id: str
+    patient_id: str
+
+
+@app.post("/book", response_model=BookingOutput)
+def book(req: BookRequest):
+    return book_atomic(req.facility_id, req.patient_id, {})
