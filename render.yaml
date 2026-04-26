@@ -1,12 +1,12 @@
 services:
   - type: web
     name: aarogyaNet-api
-    runtime: python
-    pythonVersion: "3.11"
+    env: python
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
-    autoDeployTrigger: commit
+    autoDeploy: true
+    plan: free
     envVars:
       # ── Secrets ─────────────────────────────────────────────────────────────
       # In Render Dashboard → Environment, set EACH of these as type "Secret"
