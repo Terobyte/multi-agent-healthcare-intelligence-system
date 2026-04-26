@@ -262,3 +262,48 @@ matching frontend file `arushi/app/src/__tests__/bugs_2026_04_26.test.tsx`).
 Each test that PASSES today proves the bug is real and reproducible. After a
 fix lands, the same test should FAIL with the new behaviour, prompting an
 update of the assertion to lock in the fix.
+
+---
+
+## Sweep #2 — top-10 boundary failures (2026-04-26 evening)
+
+A second pass classified findings by the *boundary* being violated rather
+than by file. The unifying theme: every critical bug is a missing contract at
+a system boundary, not a single typo.
+
+| Boundary       | What it guarantees                          | Critical bug       |
+|----------------|---------------------------------------------|--------------------|
+| transaction    | distributed lock + atomic CAS               | #1, #2, #3         |
+| backpressure   | bounded queue + deadline-based put          | #4                 |
+| contract       | None vs zero preserved through pipelines    | #5, #6 (closed)    |
+| io_deadline    | wall-clock SLA on every external call       | #7                 |
+| tenant         | ownership check before resource access      | #8                 |
+| secret         | defense-in-depth scrubber                   | #9                 |
+| exception      | exhaustive taxonomy at I/O surface          | #10                |
+
+`app/boundaries.py` provides three helpers (`with_io_deadline`, `bounded_put`,
+`as_owner`) so future code can opt into the contract. Negative tests live in
+`tests/test_critical_bugs_2026_04_26.py`.
+
+**Closed in this sweep:**
+
+- #3 — `rollback_drift` alert log on ROLLBACK_FAILED (`booking.py`)
+- #4 — SSE producer + heartbeat use `bounded_put` (`main.py`)
+- #5, #6 — None-vs-zero traps removed in router (`router.py`)
+- #7 — `with_io_deadline` wraps `outcome_route` + `ngo_data_endpoint` warehouse calls
+- #8 — `GenieClient.ask` records owner on first use, refuses cross-tenant resume
+- #9 — `apply_sponsor_patterns` redacts bare 32-hex except in safe contexts (`transaction_id=` etc.)
+- #10 — `reasoning_stream` catches `httpx.HTTPError` parent
+
+**Open (architectural — deferred for hackathon scope):**
+
+- #1 — `_patient_lock` is `threading.Lock`. Two Railway replicas can both
+  win. Real fix: warehouse-side unique constraint on
+  `(patient_id_hash, status='RESERVED')` or Redis SETNX. For the demo the
+  service runs a single replica, so this never triggers.
+- #2 — dup-active-txn check is a SELECT then a separate INSERT. Two
+  concurrent callers on the same patient can both pass the SELECT. Real fix:
+  rewrite the parent INSERT as `MERGE INTO txn_atomic ... USING (SELECT ...
+  WHERE NOT EXISTS in ('RESERVED','COMMITTED'))` so the gate is one
+  statement. Touches 6 saga tests + the booking idempotency suite — left for
+  a focused PR.

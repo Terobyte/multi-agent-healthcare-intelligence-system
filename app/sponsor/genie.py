@@ -24,6 +24,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
+from app.boundaries import as_owner
 from app.sponsor.flags import flags
 
 
@@ -73,6 +74,11 @@ class GenieClient:
         self._canned = _load_canned()
         self._w: Any = None
         self._workspace_lock: threading.Lock = threading.Lock()
+        # critical-bug #8: in-process owner ledger. A real prod build would
+        # persist this in the warehouse so it survives replicas; for the
+        # hackathon a per-instance dict closes the most obvious cross-tenant
+        # read on a single Railway replica.
+        self._conversation_owners: dict[str, str] = {}
 
     def _workspace(self) -> Any:
         # Lazy-init under a lock — concurrent live requests must not race to
@@ -88,29 +94,61 @@ class GenieClient:
                 self._w = WorkspaceClient(http_timeout_seconds=15)
         return self._w
 
-    def ask(self, conversation_id: str | None, query: str) -> dict[str, Any]:
+    def ask(
+        self,
+        conversation_id: str | None,
+        query: str,
+        *,
+        owner: str | None = None,
+    ) -> dict[str, Any]:
         """Ask Genie a natural-language question.
+
+        critical-bug #8 (tenant boundary): ``owner`` is a stable identifier
+        for the calling principal (X-Demo-Key hash, session id). When the
+        caller resumes a conversation, we record the owner the first time
+        and refuse cross-tenant resume on subsequent calls so consumer A
+        cannot read consumer B's chat history through Genie's
+        conversation_id surface.
 
         Returns ``{"conversation_id": str | None, "sql": str, "rows": list,
         "explanation": str, "source": "canned" | "live"}``.
         """
+        # Ownership gate: if a conversation_id is provided, it MUST match the
+        # owner we recorded when the conversation was opened. Anonymous
+        # access (owner=None) is treated as a violation when resuming.
+        if conversation_id:
+            recorded = self._conversation_owners.get(conversation_id)
+            if recorded is not None:
+                as_owner(
+                    expected_owner=owner,
+                    resource_owner=recorded,
+                    resource_kind="genie_conversation",
+                )
+
         if flags.SAFE_DEMO or not flags.SPONSOR_GENIE_LIVE:
-            return self._canned_response(conversation_id, query)
-
-        if not self._space_id:
+            result = self._canned_response(conversation_id, query)
+        elif not self._space_id:
             logger.warning("SPONSOR_GENIE_LIVE is true but DATABRICKS_GENIE_SPACE_ID is unset; using canned")
-            return self._canned_response(conversation_id, query)
+            result = self._canned_response(conversation_id, query)
+        else:
+            try:
+                result = self._live_response(conversation_id, query)
+            except Exception as exc:  # broad: any SDK error → canned fallback
+                logger.warning(
+                    "genie live call failed (%s: %s); falling back to canned",
+                    type(exc).__name__,
+                    exc,
+                    exc_info=True,
+                )
+                result = self._canned_response(conversation_id, query)
 
-        try:
-            return self._live_response(conversation_id, query)
-        except Exception as exc:  # broad: any SDK error → canned fallback
-            logger.warning(
-                "genie live call failed (%s: %s); falling back to canned",
-                type(exc).__name__,
-                exc,
-                exc_info=True,
-            )
-            return self._canned_response(conversation_id, query)
+        # Record ownership on the resulting conversation_id so the next
+        # resume can be gated. Only record when an owner was actually
+        # supplied — anonymous opens don't claim ownership.
+        out_conv_id = result.get("conversation_id")
+        if out_conv_id and owner and out_conv_id not in self._conversation_owners:
+            self._conversation_owners[out_conv_id] = owner
+        return result
 
     def _canned_response(self, conversation_id: str | None, query: str) -> dict[str, Any]:
         entry = _pick_canned(query, self._canned)

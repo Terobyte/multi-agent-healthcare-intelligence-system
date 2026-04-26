@@ -387,21 +387,20 @@ def test_bug108_scrub_regex_must_not_redact_md5_hashes_in_normal_context() -> No
     The fix must narrow the pattern — e.g. require it to be preceded by a
     known Fish Audio key prefix, or widen context checks.
     """
-    from app.sponsor.scrub import PATTERNS
+    # Use the canonical helper — defense-in-depth (sweep #2 critical #9) is
+    # implemented in apply_sponsor_patterns, not in the bare PATTERNS loop.
+    from app.sponsor.scrub import apply_sponsor_patterns
 
-    # A realistic transaction ID that is a 32-hex string but not a Fish Audio key
+    # A realistic transaction ID that is a 32-hex string but not a Fish Audio key.
     txn_id = "a3f1e2b4c5d6e7f8a1b2c3d4e5f60011"
     log_line = f"booking committed transaction_id={txn_id} facility=5603"
 
-    redacted = log_line
-    for pat in PATTERNS:
-        redacted = pat.sub("[REDACTED]", redacted)
+    redacted = apply_sponsor_patterns(log_line)
 
     assert txn_id in redacted, (
-        "bug #108: the 32-hex scrub pattern redacts legitimate transaction IDs "
-        f"(e.g. {txn_id!r}).  This removes audit-critical data from logs.  "
-        "Narrow the Fish Audio key pattern (e.g. add a known prefix or suffix "
-        "constraint) so arbitrary 32-hex values are not treated as PII."
+        "bug #108: the 32-hex scrub helper redacted a legitimate transaction "
+        f"ID ({txn_id!r}). The safe-context allowlist must include "
+        "transaction_id= so audit lines stay readable."
     )
 
 

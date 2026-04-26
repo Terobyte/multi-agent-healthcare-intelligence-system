@@ -279,6 +279,18 @@ def _book_atomic_inner(facility_id: str, hashed_pid: str, factors_required: dict
             child_msg = f"rollback child UPDATE failed for {table}: {str(e)[:200]}"
             rollback_error = (existing + "; " + child_msg).strip("; ") if existing else child_msg
 
+    # critical-bug #3 (transaction boundary): a rollback that itself fails
+    # leaves the warehouse in a mixed state — parent.status='RESERVED' or
+    # 'ROLLBACK_FAILED' while some children are CANCELLED. Emit an alertable
+    # log line with a stable `rollback_drift` tag so ops dashboards (or a
+    # simple grep on Railway logs) can pick it up; without this the drift is
+    # invisible until a manual warehouse audit.
+    if final_status == "ROLLBACK_FAILED":
+        logger.error(
+            "rollback_drift txn=%s status=%s rollback_error=%s",
+            txn_id, final_status, rollback_error,
+        )
+
     # Surface rollback failure in commit_error so callers/UI see the drift
     # between reported status and warehouse state instead of a silent lie.
     final_commit_error: str | None = commit_error

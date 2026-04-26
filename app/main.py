@@ -23,6 +23,7 @@ from app.agents.booking import book_atomic
 from app.agents.router import recommend as _recommend
 from app.agents.triage import triage as _triage_agent
 from app.agents.validator import validate as _validate
+from app.boundaries import BoundaryViolation, bounded_put, with_io_deadline
 from app.db import warehouse_query
 from app.schemas import BookingOutput, OutcomeFeedback, ReasoningPanelEvent, TriageOutput
 from app.util import hash_patient_id
@@ -349,11 +350,17 @@ async def sse(request: Request, session_id: SessionId):
         queue: asyncio.Queue = asyncio.Queue(maxsize=64)
         DONE = object()
 
+        # critical-bug #4 (backpressure boundary): a slow consumer fills the
+        # bounded queue; without a deadline on every queue.put the producer +
+        # heartbeat block indefinitely and the SSE response holds the worker.
+        # Heartbeats are lossy (drop OK), payload events should abort the
+        # producer if back-pressure stays > 5s.
         async def heartbeat():
             try:
                 while True:
                     await asyncio.sleep(SSE_HEARTBEAT_INTERVAL_S)
-                    await queue.put("event: ping\ndata: {}\n\n")
+                    await bounded_put(queue, "event: ping\ndata: {}\n\n",
+                                      deadline_s=2.0, op="sse_heartbeat")
             except asyncio.CancelledError:
                 pass
 
@@ -363,22 +370,41 @@ async def sse(request: Request, session_id: SessionId):
                     if await request.is_disconnected():
                         logger.info("sse_client_disconnected trace=%s at=%s", trace_id, agent)
                         return
-                    await queue.put(_evt(agent, f"{agent} starting", trace_id))
+                    if not await bounded_put(
+                        queue, _evt(agent, f"{agent} starting", trace_id),
+                        deadline_s=5.0, op="sse_producer_start",
+                    ):
+                        logger.warning("sse_backpressure_abort trace=%s at=%s_start", trace_id, agent)
+                        return
                     await asyncio.sleep(0.2)
-                    await queue.put(_evt(agent, f"{agent} done", trace_id))
-                await queue.put(
-                    f"event: done\ndata: {json.dumps({'session_id': session_id, 'trace_id': trace_id})}\n\n"
+                    if not await bounded_put(
+                        queue, _evt(agent, f"{agent} done", trace_id),
+                        deadline_s=5.0, op="sse_producer_done",
+                    ):
+                        logger.warning("sse_backpressure_abort trace=%s at=%s_done", trace_id, agent)
+                        return
+                await bounded_put(
+                    queue,
+                    f"event: done\ndata: {json.dumps({'session_id': session_id, 'trace_id': trace_id})}\n\n",
+                    deadline_s=5.0, op="sse_producer_done_event",
                 )
             except Exception as e:
                 logger.exception("sse_failed trace=%s", trace_id)
-                await queue.put(
-                    f"event: error\ndata: {json.dumps({'code':'sse_error','message':str(e)[:200]})}\n\n"
+                await bounded_put(
+                    queue,
+                    f"event: error\ndata: {json.dumps({'code':'sse_error','message':str(e)[:200]})}\n\n",
+                    deadline_s=2.0, op="sse_producer_error_event",
                 )
-                await queue.put(
-                    f"event: done\ndata: {json.dumps({'session_id': session_id, 'trace_id': trace_id})}\n\n"
+                await bounded_put(
+                    queue,
+                    f"event: done\ndata: {json.dumps({'session_id': session_id, 'trace_id': trace_id})}\n\n",
+                    deadline_s=2.0, op="sse_producer_done_after_error",
                 )
             finally:
-                await queue.put(DONE)
+                # DONE sentinel must always reach the consumer — best-effort
+                # but with a bounded deadline so this finally isn't itself
+                # a hang vector.
+                await bounded_put(queue, DONE, deadline_s=2.0, op="sse_done_sentinel")
 
         hb_task = asyncio.create_task(heartbeat())
         prod_task = asyncio.create_task(producer())
@@ -540,17 +566,24 @@ async def outcome_route(request: Request, fb: OutcomeFeedback):
 
     hashed_pid = hash_patient_id(fb.patient_id)
 
-    # bug #35: wrap each warehouse_query call so transient warehouse errors
-    # surface as a clear 503 service-unavailable instead of leaking through
-    # the global Exception handler as a generic 500. Frontend can then show
-    # an actionable "DB temporarily unavailable" message rather than "internal
-    # error" with no retry guidance.
+    # bug #35 + critical-bug #7 (io_deadline boundary): wrap each
+    # warehouse_query call in with_io_deadline so a Databricks outage surfaces
+    # as a fast 503 instead of waiting on socket_timeout * (1+retries) ≈ 92s
+    # per call. Per-call deadline is 10s — generous enough for a cold
+    # warehouse warmup but tight enough that 5 chained calls can't pin a
+    # worker for 7+ minutes.
     try:
-        ok = await asyncio.to_thread(
-            warehouse_query,
-            "SELECT 1 FROM workspace.default.gold_trust_final WHERE facility_id=? LIMIT 1",
-            [fb.facility_id],
+        ok = await with_io_deadline(
+            asyncio.to_thread(
+                warehouse_query,
+                "SELECT 1 FROM workspace.default.gold_trust_final WHERE facility_id=? LIMIT 1",
+                [fb.facility_id],
+            ),
+            deadline_s=10.0, op="outcome_facility_check",
         )
+    except BoundaryViolation as exc:
+        logger.warning("outcome_warehouse_deadline step=facility_check facility=%s err=%s", fb.facility_id, exc)
+        raise HTTPException(status_code=503, detail="warehouse unavailable: facility check timed out")
     except Exception:
         logger.exception("outcome_warehouse_query_failed step=facility_check facility=%s", fb.facility_id)
         raise HTTPException(status_code=503, detail="warehouse unavailable: facility check failed")
@@ -559,11 +592,17 @@ async def outcome_route(request: Request, fb: OutcomeFeedback):
 
     if fb.transaction_id:
         try:
-            tx = await asyncio.to_thread(
-                warehouse_query,
-                "SELECT 1 FROM workspace.default.txn_atomic WHERE transaction_id=? LIMIT 1",
-                [fb.transaction_id],
+            tx = await with_io_deadline(
+                asyncio.to_thread(
+                    warehouse_query,
+                    "SELECT 1 FROM workspace.default.txn_atomic WHERE transaction_id=? LIMIT 1",
+                    [fb.transaction_id],
+                ),
+                deadline_s=10.0, op="outcome_txn_check",
             )
+        except BoundaryViolation as exc:
+            logger.warning("outcome_warehouse_deadline step=txn_check txn=%s err=%s", fb.transaction_id, exc)
+            raise HTTPException(status_code=503, detail="warehouse unavailable: transaction check timed out")
         except Exception:
             logger.exception("outcome_warehouse_query_failed step=txn_check txn=%s", fb.transaction_id)
             raise HTTPException(status_code=503, detail="warehouse unavailable: transaction check failed")
@@ -682,8 +721,17 @@ async def ngo_data_endpoint(request: Request):
 
         warehouse_failed = False
         try:
-            rows = await asyncio.to_thread(warehouse_query, _NGO_QUERY, [])
-        except Exception:
+            # critical-bug #7 (io_deadline): same SLA contract as /outcome —
+            # NGO map is a 5-minute-cached read, so a slow warehouse must
+            # surface as "stale data" rather than a hung request. 12s is the
+            # ngo aggregation budget (slightly higher than /outcome's 10s
+            # because the GROUP BY + LEFT JOIN over silver_facilities is
+            # heavier than a single SELECT).
+            rows = await with_io_deadline(
+                asyncio.to_thread(warehouse_query, _NGO_QUERY, []),
+                deadline_s=12.0, op="ngo_data_query",
+            )
+        except (BoundaryViolation, Exception):
             # bug #118: do NOT cache an empty result that came from the
             # exception path — every caller in the next 5 minutes would see
             # an empty NGO map with no error banner. We compute the response

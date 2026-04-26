@@ -65,13 +65,14 @@ async def stream_endpoint(endpoint: str, messages: list):
                 # "Cannot send when the transport is closed" warnings.
                 logger.info("llm_stream_cancelled endpoint=%s", endpoint)
                 raise
-            except (httpx.TimeoutException, httpx.ReadError, httpx.RemoteProtocolError) as exc:
-                # bug #109: a stalled or half-closed Databricks connection
-                # raises one of these mid-stream. Without an explicit catch the
-                # exception bubbles into the FastAPI SSE generator and the
-                # client sees a hard close with no diagnostic. Log + close
-                # gracefully so the consumer can downgrade to the keyword
-                # tier instead of treating the partial output as authoritative.
+            except httpx.HTTPError as exc:
+                # bug #109 + critical-bug #10 (exception boundary): catch the
+                # httpx.HTTPError parent so every transport failure
+                # (Timeout, NetworkError, ProtocolError, ReadError,
+                # RemoteProtocolError, …) downgrades to a clean SSE close
+                # instead of escaping into FastAPI's global 500 handler. The
+                # consumer can then fall back to the keyword tier rather than
+                # treating the partial token stream as authoritative.
                 logger.warning(
                     "llm_stream_failed endpoint=%s err=%s: %s",
                     endpoint, type(exc).__name__, exc,
