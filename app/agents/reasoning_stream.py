@@ -18,9 +18,15 @@ async def stream_endpoint(endpoint: str, messages: list):
             headers={"Authorization": f"Bearer {settings.databricks_token}"},
             json={"messages": messages, "stream": True, "temperature": 0},
         ) as resp:
-            try:
-                async for line in resp.aiter_lines():
-                    if line.startswith("data: "):
-                        yield line[6:]
-            finally:
-                await resp.aclose()
+            # Without raise_for_status, a 401/500 streams the HTML error body
+            # as if it were SSE chunks — caller would see garbage and crash on
+            # json.loads with no useful diagnostic.
+            resp.raise_for_status()
+            async for line in resp.aiter_lines():
+                if not line.startswith("data: "):
+                    continue
+                payload = line[6:]
+                # OpenAI-compat terminal sentinel; not parseable as JSON.
+                if payload == "[DONE]":
+                    return
+                yield payload

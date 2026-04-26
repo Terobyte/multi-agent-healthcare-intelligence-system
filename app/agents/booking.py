@@ -26,9 +26,14 @@ ALLOWED_TABLES = {t for t, _, _ in RESOURCE_TABLES}
 # ...)) automatically gets a rollback path. Hand-maintaining a parallel dict was
 # a drift hazard.
 RESOURCE_TABLE_BY_SHORT = {t.split("_")[0]: t for t, _, _ in RESOURCE_TABLES}
-assert set(RESOURCE_TABLE_BY_SHORT.values()) == ALLOWED_TABLES, (
-    "RESOURCE_TABLE_BY_SHORT drifted from RESOURCE_TABLES — short keys collided"
-)
+# RuntimeError, not assert — Python -O strips asserts entirely; a silent drop
+# of a short key would leave orphaned RESERVED rows on rollback in production.
+if set(RESOURCE_TABLE_BY_SHORT.values()) != ALLOWED_TABLES:
+    raise RuntimeError(
+        "RESOURCE_TABLE_BY_SHORT drifted from RESOURCE_TABLES — short keys collided. "
+        "Two tables share the same first segment (e.g. bed_reservations + bed_overflow). "
+        "Pick a different prefix or refactor the dict construction."
+    )
 
 
 def book_atomic(facility_id: str, patient_id: str, factors_required: dict) -> dict:

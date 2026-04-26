@@ -1,0 +1,33 @@
+event: triage
+data: {"agent": "triage", "token": "triage starting", "trace_id": "5637e895-70d3-447d-88e1-f314b5be521d", "ts": "2026-04-26T03:08:04.879448+00:00"}
+
+event: triage
+data: {"agent": "triage", "token": "triage done", "trace_id": "5637e895-70d3-447d-88e1-f314b5be521d", "ts": "2026-04-26T03:08:04.879678+00:00"}
+
+event: extractor
+data: {"agent": "extractor", "token": "extractor starting", "trace_id": "5637e895-70d3-447d-88e1-f314b5be521d", "ts": "2026-04-26T03:08:04.879692+00:00"}
+
+event: extractor
+data: {"agent": "extractor", "token": "extractor done", "trace_id": "5637e895-70d3-447d-88e1-f314b5be521d", "ts": "2026-04-26T03:08:04.879699+00:00"}
+
+event: validator
+data: {"agent": "validator", "token": "validator starting", "trace_id": "5637e895-70d3-447d-88e1-f314b5be521d", "ts": "2026-04-26T03:08:04.879704+00:00"}
+
+event: validator
+data: {"agent": "validator", "token": "validator done", "trace_id": "5637e895-70d3-447d-88e1-f314b5be521d", "ts": "2026-04-26T03:08:04.879708+00:00"}
+
+event: router
+data: {"agent": "router", "token": "router starting", "trace_id": "5637e895-70d3-447d-88e1-f314b5be521d", "ts": "2026-04-26T03:08:04.879713+00:00"}
+
+event: router
+data: {"agent": "router", "token": "router done", "trace_id": "5637e895-70d3-447d-88e1-f314b5be521d", "ts": "2026-04-26T03:08:04.879717+00:00"}
+
+event: transfer
+data: {"agent": "transfer", "token": "transfer starting", "trace_id": "5637e895-70d3-447d-88e1-f314b5be521d", "ts": "2026-04-26T03:08:04.879721+00:00"}
+
+event: transfer
+data: {"agent": "transfer", "token": "transfer done", "trace_id": "5637e895-70d3-447d-88e1-f314b5be521d", "ts": "2026-04-26T03:08:04.879725+00:00"}
+
+event: done
+data: {"session_id": "demo", "trace_id": "5637e895-70d3-447d-88e1-f314b5be521d"}
+

@@ -97,7 +97,9 @@ def _fm_endpoint_count(ttl_sec: int = 60, timeout: float = 8.0) -> Optional[int]
         future = _fm_executor.submit(lambda: len(fm_client().list_endpoints()))
         _ep_cache["n"] = future.result(timeout=timeout)
     except Exception:
-        pass  # keep last-known (None on cold-start / timeout / auth failure)
+        # Throttled by ttl_sec — no log storm even during a sustained outage.
+        # Keep last-known endpoint count (None on cold-start / auth failure).
+        logger.warning("fm_probe_failed last_known=%s", _ep_cache["n"], exc_info=True)
     _ep_cache["ts"] = now
     return _ep_cache["n"]
 
@@ -163,11 +165,23 @@ async def sse(session_id: str):
     trace_id = str(uuid4())
 
     async def gen():
+        # Initial ping confirms liveness to the client before the first agent
+        # tick — and gives the proxy a byte to flush so it doesn't buffer the
+        # response. Without it, an exception before the first yield closes the
+        # connection silently with no body.
+        yield "event: ping\ndata: {}\n\n"
+        last_ping = time.time()
         try:
             for agent in AGENT_ORDER:
                 yield _evt(agent, f"{agent} starting", trace_id)
                 await asyncio.sleep(0.2)  # placeholder cadence; real agents stream tokens
                 yield _evt(agent, f"{agent} done", trace_id)
+                # Render/Cloudflare idle-close streaming connections after
+                # ~30-60s. Emit a ping if more than 15s elapsed since the last
+                # frame so long-running real agents don't drop the stream.
+                if time.time() - last_ping > 15:
+                    yield "event: ping\ndata: {}\n\n"
+                    last_ping = time.time()
             yield f"event: done\ndata: {json.dumps({'session_id': session_id, 'trace_id': trace_id})}\n\n"
         except Exception as e:
             logger.exception("sse_failed trace=%s", trace_id)
