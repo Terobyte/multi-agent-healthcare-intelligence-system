@@ -1,6 +1,7 @@
 import time
 import concurrent.futures
 from functools import lru_cache
+from typing import Optional
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.settings import settings
@@ -42,7 +43,7 @@ def reset_fm_client() -> None:
     _ep_cache["ts"] = 0.0
 
 
-def _fm_endpoint_count(ttl_sec: int = 60, timeout: float = 8.0) -> int | None:
+def _fm_endpoint_count(ttl_sec: int = 60, timeout: float = 8.0) -> Optional[int]:
     now = time.time()
     # cache every attempt within TTL — successful or not. Render probes /health
     # every 10-30s; without stamping ts on failure too, an FM-API outage turns
