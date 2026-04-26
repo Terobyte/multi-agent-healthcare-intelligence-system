@@ -18,21 +18,22 @@ const specialtyDotColor: Record<string, string> = {
 };
 const fallbackDotColor = "#9A9690";
 
-function buildPinIcon(specialty: string, matched: boolean): L.DivIcon {
+function buildPinIcon(specialty: string, matched: boolean, index: number): L.DivIcon {
   const color = specialtyDotColor[specialty] ?? fallbackDotColor;
+  const delay = ((index % 5) * -0.37).toFixed(2);
   if (matched) {
     return new L.DivIcon({
       className: "ngo-pin-marker",
-      html: `<div style="width:14px;height:14px;border-radius:999px;background:${color};border:2px solid #2A1709;box-shadow:0 0 0 4px ${color}55;"></div>`,
-      iconSize: [14, 14],
-      iconAnchor: [7, 7],
+      html: `<div class="cg-ngo-pin-shell"><div class="cg-map-dot" style="width:14px;height:14px;border-radius:999px;background:${color};border:2px solid #2A1709;--cg-map-shadow-rest:0 0 0 4px ${color}4D;--cg-map-shadow-peak:0 0 0 5px ${color}66,0 0 14px ${color}24;animation-delay:${delay}s;"></div></div>`,
+      iconSize: [18, 18],
+      iconAnchor: [9, 9],
     });
   }
   return new L.DivIcon({
     className: "ngo-pin-marker ngo-pin-faded",
-    html: `<div style="width:9px;height:9px;border-radius:999px;background:#5A5550;border:1px solid #2A1709;opacity:0.55;"></div>`,
-    iconSize: [9, 9],
-    iconAnchor: [4, 4],
+    html: `<div class="cg-ngo-pin-shell"><div style="width:9px;height:9px;border-radius:999px;background:#5A5550;border:1px solid #2A1709;opacity:0.55;"></div></div>`,
+    iconSize: [18, 18],
+    iconAnchor: [9, 9],
   });
 }
 
@@ -269,13 +270,13 @@ export default function NGODashboard() {
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
             />
             <FitToHospitals pins={data?.underservedPins ?? []} />
-            {(data?.underservedPins ?? []).map((pin) => {
+            {(data?.underservedPins ?? []).map((pin, index) => {
               const matched = specialty === "All" || pin.specialty === specialty;
               return (
                 <Marker
                   key={pin.id}
                   position={[pin.lat, pin.lng]}
-                  icon={buildPinIcon(pin.specialty, matched)}
+                  icon={buildPinIcon(pin.specialty, matched, index)}
                   // Faded pins shouldn't steal clicks while a filter is active —
                   // user is explicitly hunting matched pins; greyed dots are
                   // context, not interactive targets.

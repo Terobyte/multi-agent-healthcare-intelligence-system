@@ -80,13 +80,33 @@ body {
 
 /* Map pins breathe subtly so live availability feels active without stealing attention. */
 @keyframes cg-map-dot-breathe {
-  0%, 100% { transform: scale(0.96); }
-  50%      { transform: scale(1.04); }
+  0%, 100% {
+    box-shadow: var(--cg-map-shadow-rest);
+    filter: brightness(0.98) saturate(0.98);
+    transform: scale(0.96);
+  }
+  50% {
+    box-shadow: var(--cg-map-shadow-peak);
+    filter: brightness(1.08) saturate(1.06);
+    transform: scale(1.04);
+  }
 }
 
 .cg-map-dot {
+  --cg-map-shadow-rest: 0 0 0 4px rgba(135, 168, 120, 0.26);
+  --cg-map-shadow-peak: 0 0 0 5px rgba(135, 168, 120, 0.34), 0 0 14px rgba(135, 168, 120, 0.16);
+  display: block;
+  box-shadow: var(--cg-map-shadow-rest);
   transform-origin: center;
   animation: cg-map-dot-breathe 2.8s ease-in-out infinite;
+}
+
+.cg-ngo-pin-shell {
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 @media (prefers-reduced-motion: reduce) {

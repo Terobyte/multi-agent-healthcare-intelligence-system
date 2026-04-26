@@ -23,9 +23,12 @@ function availabilityFor(hospital: Hospital): Availability {
 
 function makeIcon(level: Availability, index: number): L.DivIcon {
   const styles: Record<Availability, string> = {
-    high: "background:#87A878;box-shadow:0 0 0 4px rgba(135,168,120,0.30);",
-    ok: "background:#FFB088;box-shadow:0 0 0 4px rgba(255,176,136,0.25);",
-    low: "background:#C2522B;box-shadow:0 0 0 3px rgba(194,82,43,0.30);opacity:0.85;",
+    high:
+      "background:#87A878;--cg-map-shadow-rest:0 0 0 4px rgba(135,168,120,0.26);--cg-map-shadow-peak:0 0 0 5px rgba(135,168,120,0.34),0 0 14px rgba(135,168,120,0.16);",
+    ok:
+      "background:#FFB088;--cg-map-shadow-rest:0 0 0 4px rgba(255,176,136,0.22);--cg-map-shadow-peak:0 0 0 5px rgba(255,176,136,0.30),0 0 14px rgba(255,176,136,0.14);",
+    low:
+      "background:#C2522B;--cg-map-shadow-rest:0 0 0 3px rgba(194,82,43,0.26);--cg-map-shadow-peak:0 0 0 4px rgba(194,82,43,0.34),0 0 12px rgba(194,82,43,0.13);opacity:0.85;",
   };
   const delay = ((index % 5) * -0.37).toFixed(2);
   return new L.DivIcon({
