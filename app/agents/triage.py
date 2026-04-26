@@ -30,6 +30,7 @@ from typing import AsyncIterator
 
 import httpx
 import mlflow.deployments
+from pydantic import ValidationError
 
 from app.agents.reasoning_stream import stream_endpoint
 from app.schemas import TriageOutput
@@ -77,9 +78,21 @@ _CORPUS, _RED_FLAGS = _load_corpus()
 # ---------------------------------------------------------------------------
 # Prompt-injection guard + log redaction helpers
 # ---------------------------------------------------------------------------
-# Strip ASCII / unicode control chars except \t\n; cap input length so a giant
-# blob of attacker text can't dominate the model context window.
-_CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
+# Strip ASCII + Unicode control / bidi / zero-width chars except \t\n; cap
+# input length so a giant blob of attacker text can't dominate the model
+# context window. bug #100: the previous regex only covered ASCII (\x00-\x1f,
+# \x7f). Adversaries can embed Unicode C1 controls (U+0080-U+009F), bidi
+# overrides (U+202E etc.), zero-width chars (U+200B/200C/200D), and line
+# separators (U+2028/2029) that pass through as "whitespace" to the LLM but
+# disrupt the structural prompt boundaries.
+_CONTROL_CHARS_RE = re.compile(
+    r"[\x00-\x08\x0b-\x1f\x7f-\x9f"
+    r"\u200b-\u200f"   # zero-width space / joiner / non-joiner / LRM / RLM
+    r"\u2028\u2029"     # line / paragraph separator
+    r"\u202a-\u202e"    # bidi embedding + override
+    r"\u2066-\u2069"    # bidi isolate (LRI / RLI / FSI / PDI)
+    r"]"
+)
 _MAX_SYMPTOM_CHARS = 2000
 
 
@@ -301,7 +314,7 @@ def triage(symptoms: str, language: str = "en") -> TriageOutput:
         data = json.loads(raw)
         # Pydantic validates field types and range constraints (urgency 1-5, etc.)
         return _apply_overrides(raw_symptoms, TriageOutput(**data))
-    except (concurrent.futures.TimeoutError, json.JSONDecodeError, ValueError, RuntimeError, KeyError) as e:
+    except (concurrent.futures.TimeoutError, json.JSONDecodeError, ValueError, ValidationError, RuntimeError, KeyError) as e:
         # Narrow the catch — bare `except Exception` was masking
         # `asyncio.CancelledError` and similar BaseException-adjacent signals
         # that must propagate (worker shutdown, SIGINT). Pydantic ValidationError

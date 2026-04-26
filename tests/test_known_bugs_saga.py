@@ -84,9 +84,11 @@ def test_bug3_raw_patient_id_must_not_reach_warehouse_params(monkeypatch):
         f"raw patient_id leaked into warehouse params: {flat}"
     )
 
-    hash_re = re.compile(r"^p_[0-9a-f]{16}$")
+    # bug #110 widened the hash from 16 to 32 hex chars; either width is valid
+    # for this test — the contract is "hashed, not raw", not a fixed width.
+    hash_re = re.compile(r"^p_[0-9a-f]{16,64}$")
     assert any(hash_re.match(s) for s in flat), (
-        f"no hashed patient_id (p_<16 hex>) found in warehouse params: {flat}"
+        f"no hashed patient_id (p_<hex>) found in warehouse params: {flat}"
     )
 
 

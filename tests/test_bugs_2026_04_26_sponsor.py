@@ -368,12 +368,11 @@ def test_bug103_extract_user_text_raises_on_completely_malformed_input() -> None
     class Malformed:
         input = None  # completely missing input
 
-    result = _extract_user_text(Malformed())
-    assert result != "", (
-        "bug #103: _extract_user_text returns empty string for None input. "
-        "A caller that receives '' silently passes it into triage() rather than "
-        "rejecting the malformed request.  Raise ValueError or return a sentinel."
-    )
+    # bug #103 desired behavior: ValueError on a structural protocol violation
+    # (None input is not a legitimate empty turn). The previous silent ``""``
+    # return was the bug.
+    with pytest.raises(ValueError):
+        _extract_user_text(Malformed())
 
 
 # ---------------------------------------------------------------------------

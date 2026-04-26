@@ -42,10 +42,15 @@ def _extract_user_text(request: Any) -> str:
     """Pull the most recent user message text out of a ResponsesAgent request.
 
     The Responses API shape allows multi-turn input; we only care about the
-    last user turn. Defensive against missing fields so a malformed call
-    doesn't crash mid-demo.
+    last user turn. bug #103: previously returned ``""`` on any malformed input
+    and triage() crashed downstream with a confusing "blank symptoms" error.
+    A missing/None ``input`` field is a structural protocol violation, not a
+    legitimate empty turn — surface it as ValueError so the route returns a
+    clear 422 at the entry point.
     """
-    items = getattr(request, "input", None) or []
+    items = getattr(request, "input", None)
+    if items is None:
+        raise ValueError("request has no `input` field")
     for item in reversed(items):
         content = getattr(item, "content", None)
         if isinstance(content, str) and content:

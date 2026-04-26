@@ -168,8 +168,18 @@ def _travel_min(distance_km: float) -> int:
 
 
 def _city_coords(city: str) -> tuple[float, float]:
-    """Return (lat, lon) for a city name; falls back to the centre of India."""
-    return _CITY_COORDS.get(city.strip().lower(), _INDIA_CENTER)
+    """Return (lat, lon) for a city name; falls back to the centre of India.
+
+    bug #98: log a warning when the city is unknown so the silent geocentre
+    fallback shows up in ops dashboards. Without this, a typoed or unmapped
+    city name produces silently-wrong distance rankings — every facility is
+    measured from the centre of India instead of the patient's real location.
+    """
+    key = city.strip().lower()
+    if key in _CITY_COORDS:
+        return _CITY_COORDS[key]
+    logger.warning("router_city_unknown city=%r — falling back to India centroid", city)
+    return _INDIA_CENTER
 
 
 # ---------------------------------------------------------------------------

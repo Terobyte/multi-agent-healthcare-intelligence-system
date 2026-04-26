@@ -20,7 +20,7 @@ def test_hash_patient_id_differs_per_input():
 def test_hash_patient_id_format():
     h = hash_patient_id("anything")
     assert h.startswith("p_")
-    assert len(h) == 18  # "p_" + 16 hex chars
+    assert len(h) == 34  # "p_" + 32 hex chars (bug #110 — was 18)
     int(h[2:], 16)  # raises if non-hex
 
 

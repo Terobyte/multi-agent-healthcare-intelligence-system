@@ -914,11 +914,14 @@ def test_bug77_feedback_id_hash_input_must_strip_control_chars() -> None:
 
     # Find the key/raw_key assignment line and the hashlib.sha256 call.
     # Between them, re.sub or .translate must appear.
+    # NOTE: the hash key may use a pre-hashed patient id (see bug #116) so the
+    # patient_id substring isn't required on the f-string line itself — match
+    # any raw_key/key f-string assignment.
     lines = fn_src.splitlines()
     key_line_idx = None
     hash_line_idx = None
     for i, line in enumerate(lines):
-        if re.search(r"(raw_key|key)\s*=\s*f\"", line) and "patient_id" in line:
+        if re.search(r"(raw_key|key)\s*=\s*f\"", line):
             if key_line_idx is None:
                 key_line_idx = i
         if "sha256" in line and "hashlib" in line:

@@ -75,12 +75,14 @@ def _get_salt() -> str:
 
 
 def hash_patient_id(patient_id: str) -> str:
-    """Salted SHA-256 → 16-hex-char prefix prefixed with `p_`.
+    """Salted SHA-256 → 32-hex-char prefix prefixed with `p_`.
 
-    16 hex chars = 64 bits = ~10^19 keyspace; collision probability for a
-    realistic patient population (10^7) is negligible.
+    bug #110: 16 hex chars (64 bits) is mathematically fine for 10^7 patients
+    but offers no defence-in-depth headroom. 32 hex chars (128 bits) keeps
+    collision probability astronomically below any realistic Indian healthcare
+    population without changing the wire shape (`p_<hex>`).
     """
-    return "p_" + hashlib.sha256((_get_salt() + patient_id).encode()).hexdigest()[:16]
+    return "p_" + hashlib.sha256((_get_salt() + patient_id).encode()).hexdigest()[:32]
 
 
 def round_geo(lat: float, lon: float) -> tuple[float, float]:

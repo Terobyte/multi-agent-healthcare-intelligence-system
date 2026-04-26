@@ -18,8 +18,16 @@ PATTERNS: list[re.Pattern[str]] = [
     # OpenAI: sk-..., sk-proj-..., etc. 20+ trailing chars to avoid matching
     # arbitrary "sk-" prefixes in normal English text.
     re.compile(r"sk-[A-Za-z0-9_-]{20,}", re.IGNORECASE),
-    # Fish Audio key shape: 32 lowercase hex characters. Word boundaries on
-    # both sides so a 32-hex commit hash inside a URL doesn't get redacted —
-    # but a bare ``11fc20c6521f4a869dc4b7cce9a5f0ea`` in a log line does.
-    re.compile(r"\b[a-f0-9]{32}\b"),
+    # bug #108: the previous bare 32-hex pattern matched legitimate MD5
+    # hashes / transaction IDs / UUID-no-hyphens that healthcare audit logs
+    # rely on (every booking writes transaction_id=<32-hex> lines). Require
+    # an explicit Fish Audio context — `fish_key=`, `apiKey=`, `Fish-Key:`,
+    # an `Authorization: Bearer ` shape, or the literal `FISH_API_KEY`
+    # environment-variable token — before redacting. Real Fish Audio keys
+    # always appear next to one of these markers in our logs; bare 32-hex
+    # strings without context are almost certainly transaction IDs.
+    re.compile(
+        r"(?i)(?:fish[_-]?(?:api[_-]?)?key|FISH_API_KEY|apikey|api[_-]key|"
+        r"authorization\s*:\s*bearer)[\s:=]+[a-f0-9]{32}\b"
+    ),
 ]
