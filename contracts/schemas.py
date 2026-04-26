@@ -51,10 +51,12 @@ class VoiceVerifyInput(BaseModel):
 
 class TriageOutput(BaseModel):
     specialty: str
-    urgency: int = Field(ge=1, le=5)
-    symptoms_parsed: list[str]
+    urgency: int = Field(ge=1, le=5)  # 1 (low) → 5 (life-threatening)
     confidence: float = Field(ge=0.0, le=1.0)
-    trace_id: str
+    required_bed_type: Literal["icu", "hdu", "general", "pediatric", "maternity", "isolation"]
+    fast_path: bool
+    red_flag_match: list[str] = Field(default_factory=list)
+    reasoning: str
 
 
 class BedPrediction(BaseModel):

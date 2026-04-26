@@ -1,7 +1,9 @@
 {
   "specialty": "respiratory medicine",
   "urgency": 3,
-  "symptoms_parsed": ["fever", "cough", "chest pain"],
   "confidence": 0.84,
-  "trace_id": "tr_triage_mock_001"
+  "required_bed_type": "general",
+  "fast_path": false,
+  "red_flag_match": [],
+  "reasoning": "Patient presents with fever, cough, and chest pain consistent with respiratory illness; no immediate life-threatening signs."
 }
