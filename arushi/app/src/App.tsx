@@ -12,9 +12,9 @@ const tabs: {
   label: string;
   icon: LucideIcon;
 }[] = [
-  { key: "patient", label: "Patient Flow", icon: ActivitySquare },
-  { key: "doctor", label: "Doctor Copilot", icon: Bot },
-  { key: "ngo", label: "NGO Dashboard", icon: Landmark },
+  { key: "patient", label: "Patient", icon: ActivitySquare },
+  { key: "doctor", label: "Doctor", icon: Bot },
+  { key: "ngo", label: "NGO", icon: Landmark },
 ];
 
 export default function App() {
@@ -26,51 +26,52 @@ export default function App() {
   }, [activeTab]);
 
   return (
-    <div className="min-h-screen bg-slate-950 bg-hero-radial text-slate-100">
-      <div className="mx-auto max-w-7xl px-6 py-8">
-        <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="text-xs uppercase tracking-[0.24em] text-indigo-300">Hackathon demo</p>
-            <h1 className="mt-1 text-3xl font-semibold tracking-tight">Healthcare Intelligence</h1>
+    <div className="min-h-screen bg-cg-page text-cg-ivory">
+      <div className="mx-auto max-w-[1304px] px-6 pb-10 pt-6">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="h-7 w-7 rounded-lg bg-cg-grad-logo-peach" />
+            <span className="text-[15px] font-semibold tracking-cg-tight text-cg-ivory">
+              CareGuide
+            </span>
+            <span className="ml-2 text-[11px] uppercase tracking-cg-overline-wide text-cg-mist4">
+              Hackathon demo
+            </span>
           </div>
-          <div className="rounded-xl border border-slate-800 bg-slate-900/70 px-3 py-2 text-xs text-slate-300">
-            AI triage + trust signals + live routing
+          <div className="inline-flex rounded-full border border-white/[0.06] bg-cg-stage/70 p-1 backdrop-blur-cg-glass">
+            {tabs.map((tab) => {
+              const Icon = tab.icon;
+              const active = activeTab === tab.key;
+              return (
+                <button
+                  key={tab.key}
+                  type="button"
+                  className={`relative flex items-center gap-2 rounded-full px-3.5 py-1.5 text-xs font-semibold transition ${
+                    active ? "text-cg-peach-ink" : "text-cg-mist2 hover:text-cg-mist5"
+                  }`}
+                  onClick={() => setActiveTab(tab.key)}
+                >
+                  {active && (
+                    <motion.span
+                      layoutId="cg-tab-pill"
+                      className="absolute inset-0 rounded-full bg-cg-peach"
+                      transition={{ type: "spring", stiffness: 380, damping: 28 }}
+                    />
+                  )}
+                  <Icon size={14} className="relative z-10" />
+                  <span className="relative z-10">{tab.label}</span>
+                </button>
+              );
+            })}
           </div>
-        </header>
-
-        <div className="mb-6 inline-flex rounded-2xl border border-slate-800 bg-slate-900/75 p-1">
-          {tabs.map((tab) => {
-            const Icon = tab.icon;
-            const active = activeTab === tab.key;
-            return (
-              <button
-                key={tab.key}
-                type="button"
-                className={`relative flex items-center gap-2 rounded-xl px-4 py-2 text-sm transition ${
-                  active ? "text-white" : "text-slate-400 hover:text-slate-200"
-                }`}
-                onClick={() => setActiveTab(tab.key)}
-              >
-                {active && (
-                  <motion.span
-                    layoutId="tab-pill"
-                    className="absolute inset-0 rounded-xl bg-indigo-500/30"
-                    transition={{ type: "spring", stiffness: 380, damping: 28 }}
-                  />
-                )}
-                <Icon size={15} className="relative z-10" />
-                <span className="relative z-10">{tab.label}</span>
-              </button>
-            );
-          })}
         </div>
 
         <AnimatePresence mode="wait">
           <motion.div
             key={activeTab}
-            initial={{ opacity: 0, y: 10 }}
+            initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
+            exit={{ opacity: 0, y: -6 }}
             transition={{ duration: 0.22 }}
           >
             <ActivePage />

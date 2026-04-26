@@ -1,6 +1,6 @@
+import { motion } from "framer-motion";
 import { Mic, MicOff, SendHorizontal } from "lucide-react";
 import { useState } from "react";
-import { motion } from "framer-motion";
 import { useSpeechRecognition } from "../hooks/useSpeechRecognition";
 
 interface ChatInputProps {
@@ -10,12 +10,8 @@ interface ChatInputProps {
 
 export default function ChatInput({ onSend, loading }: ChatInputProps) {
   const [query, setQuery] = useState("");
-  // Real medical intake descriptions can run several sentences (symptoms +
-  // duration + meds + history) — 180 was too tight for actual demo prompts.
   const maxChars = 500;
 
-  // Block 11 — Hindi voice input. Final transcript appends to whatever the
-  // user has typed so far rather than replacing, so they can mix typing + voice.
   const { supported, listening, transcript, error, start, stop } = useSpeechRecognition({
     lang: "hi-IN",
     onFinal: (final) => {
@@ -39,73 +35,66 @@ export default function ChatInput({ onSend, loading }: ChatInputProps) {
     else start();
   };
 
-  // While listening, overlay the live (interim) transcript so the user sees
-  // what the API thinks they said. The final result merges via onFinal above.
   const displayValue = listening && transcript ? `${query}${query ? " " : ""}${transcript}` : query;
 
   return (
-    <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-3 shadow-premium">
-      <div className="mb-2 flex items-center justify-between">
-        <div className="text-xs uppercase tracking-widest text-slate-400">Patient intake prompt</div>
-        {listening && (
-          <div className="flex items-center gap-1.5 text-[11px] text-rose-400">
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-rose-500" />
-            listening (hi-IN)
-          </div>
-        )}
-      </div>
-      <div className="flex items-center gap-2">
+    <div className="rounded-2xl border border-white/[0.05] bg-[rgba(40,40,42,0.7)] px-3.5 py-3 backdrop-blur-cg-glass">
+      <div className="flex items-center gap-2.5">
         <input
-          className="h-11 flex-1 rounded-xl border border-slate-700 bg-slate-950 px-4 text-sm text-slate-100 outline-none transition focus:border-indigo-500"
-          placeholder="eg. Need trauma center with oxygen + specialist in under 25 mins..."
+          className="h-8 flex-1 bg-transparent text-[13px] text-cg-mist5 placeholder:text-cg-mist4 outline-none"
+          placeholder="Chest tightness, age 64, started 30 min ago…"
           value={displayValue}
           onChange={(e) => setQuery(e.target.value.slice(0, maxChars))}
           onKeyDown={(e) => e.key === "Enter" && submit()}
           disabled={loading || listening}
         />
         <button
-          className={
-            "flex h-11 w-11 items-center justify-center rounded-xl border transition " +
-            (!supported
-              ? "cursor-not-allowed border-slate-800 text-slate-600"
-              : listening
-                ? "border-rose-500 bg-rose-500/10 text-rose-400 hover:border-rose-400"
-                : "border-slate-700 text-slate-300 hover:border-indigo-500 hover:text-indigo-400")
-          }
+          type="button"
+          onClick={onMicClick}
+          disabled={!supported || loading}
           aria-label={
             !supported
-              ? "Microphone not supported in this browser"
+              ? "Microphone not supported"
               : listening
                 ? "Stop listening"
                 : "Start Hindi voice input"
           }
           title={
             !supported
-              ? "Web Speech API not available — use Chrome/Edge for voice input"
+              ? "Web Speech API not available — use Chrome/Edge"
               : listening
                 ? "Stop listening"
                 : "Speak Hindi (hi-IN)"
           }
-          type="button"
-          onClick={onMicClick}
-          disabled={!supported || loading}
+          className={
+            "flex h-8 w-8 items-center justify-center rounded-full border transition " +
+            (!supported
+              ? "cursor-not-allowed border-white/[0.06] text-cg-mist4"
+              : listening
+                ? "border-cg-peach bg-cg-peach/30 text-cg-peach"
+                : "border-[rgba(255,176,136,0.25)] bg-[rgba(255,176,136,0.15)] text-cg-peach hover:bg-[rgba(255,176,136,0.22)]")
+          }
         >
-          {supported ? <Mic size={18} /> : <MicOff size={18} />}
+          {supported ? <Mic size={14} /> : <MicOff size={14} />}
         </button>
         <motion.button
           whileTap={{ scale: 0.97 }}
-          className="flex h-11 items-center gap-2 rounded-xl bg-indigo-500 px-4 text-sm font-medium text-white transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-50"
-          onClick={submit}
-          disabled={loading || listening}
           type="button"
+          onClick={submit}
+          disabled={loading || listening || !query.trim()}
+          className="flex h-8 items-center gap-1.5 rounded-lg bg-cg-peach-ink px-3 text-[12px] font-semibold text-cg-peach-ctx transition hover:bg-cg-peach-inkHi disabled:cursor-not-allowed disabled:opacity-50"
         >
-          <SendHorizontal size={16} />
-          {loading ? "Sending..." : "Send"}
+          <SendHorizontal size={13} />
+          {loading ? "Sending…" : "Send"}
         </motion.button>
       </div>
-      <div className="mt-2 flex items-center justify-between text-[11px]">
-        <span className="text-rose-400/80">{error ? `mic: ${error}` : ""}</span>
-        <span className="text-slate-500">{query.length}/{maxChars}</span>
+      <div className="mt-1.5 flex items-center justify-between text-[10px]">
+        <span className="text-cg-peach/80">
+          {listening ? "● listening (hi-IN)" : error ? `mic: ${error}` : ""}
+        </span>
+        <span className="text-cg-mist4">
+          {query.length}/{maxChars}
+        </span>
       </div>
     </div>
   );

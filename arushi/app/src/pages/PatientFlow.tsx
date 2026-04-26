@@ -19,6 +19,14 @@ const agentById: Record<string, RenderedReasoningRow["agent"]> = {
 // AnimatePresence + key={activeTab} unmounts the page). useRef would reset.
 let _autoQuerySent = false;
 
+const navItems = [
+  { label: "Find care", active: true, badge: "Now" },
+  { label: "My visits", active: false },
+  { label: "Records", active: false },
+  { label: "Messages", active: false },
+  { label: "Settings", active: false },
+];
+
 export default function PatientFlow() {
   const [hospitals, setHospitals] = useState<Hospital[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -162,44 +170,140 @@ export default function PatientFlow() {
     void runRecommendation("Auto triage critical care options nearby.");
   }, [runRecommendation]);
 
+  const lit = hospitals[0];
+  const backups = hospitals.slice(1, 3);
+  const subline = hospitals.length
+    ? `${hospitals.length} hospitals near you · live availability checked seconds ago`
+    : isLoading
+      ? "Triaging your symptoms…"
+      : "Awaiting your symptoms.";
+
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-        <div className="space-y-4">
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      className="relative overflow-hidden rounded-cg-stage bg-cg-stage px-8 pb-10 pt-9"
+    >
+      {/* Lantern blooms — peach top-right, sage bottom-left. */}
+      <div className="pointer-events-none absolute -right-16 -top-20 h-72 w-72 rounded-full bg-cg-bloom-peach opacity-55 blur-[70px]" />
+      <div className="pointer-events-none absolute -bottom-24 -left-16 h-56 w-56 rounded-full bg-cg-bloom-sage opacity-50 blur-[70px]" />
+
+      <div className="relative z-[2] grid gap-7 lg:grid-cols-[240px_1fr]">
+        {/* ── Sidebar ─────────────────────────────────────── */}
+        <aside className="flex min-h-[500px] flex-col gap-1.5 rounded-[22px] border border-white/[0.06] bg-[rgba(20,20,21,0.7)] px-4 py-6 backdrop-blur-cg-sidebar">
+          <div className="mb-5 flex items-center gap-2.5 px-2.5">
+            <div className="h-[26px] w-[26px] rounded-lg bg-cg-grad-logo-peach" />
+            <span className="text-[15px] font-semibold tracking-cg-tight text-cg-ivory">
+              CareGuide
+            </span>
+          </div>
+          {navItems.map((item) => (
+            <div
+              key={item.label}
+              className={`flex cursor-pointer items-center gap-3 rounded-xl px-3.5 py-2.5 text-[13px] transition ${
+                item.active
+                  ? "bg-[rgba(255,176,136,0.12)] text-cg-peach"
+                  : "text-cg-mist2 hover:bg-white/[0.04] hover:text-cg-mist5"
+              }`}
+            >
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${item.active ? "bg-cg-peach" : "bg-current opacity-50"}`}
+              />
+              {item.label}
+              {item.badge ? (
+                <span className="ml-auto rounded-full bg-[rgba(255,176,136,0.2)] px-2 py-0.5 text-[10px] font-semibold text-cg-peach">
+                  {item.badge}
+                </span>
+              ) : null}
+            </div>
+          ))}
+          <div className="mt-auto flex items-center gap-2.5 rounded-2xl bg-[rgba(40,40,42,0.7)] px-3 py-2.5 text-[12px] text-cg-mist5">
+            <div className="h-7 w-7 flex-shrink-0 rounded-full bg-cg-grad-logo-sage" />
+            <div className="leading-tight">
+              Priya S.
+              <span className="block text-[10px] text-cg-mist3">Patient</span>
+            </div>
+          </div>
+        </aside>
+
+        {/* ── Main ─────────────────────────────────────── */}
+        <main className="flex min-w-0 flex-col gap-4">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h1 className="text-[28px] font-semibold tracking-cg-tight text-cg-ivory">
+                Where to go now
+              </h1>
+              <p className="mt-1 text-[13px] text-cg-mist2">{subline}</p>
+            </div>
+            <div className="min-w-[260px] rounded-full border border-white/[0.05] bg-[rgba(40,40,42,0.7)] px-5 py-2.5 text-[13px] text-cg-mist4">
+              Search by symptom or care type…
+            </div>
+          </div>
+
           <ChatInput onSend={runRecommendation} loading={isLoading} />
+
           {degraded ? (
-            <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-2 text-xs text-amber-200">
+            <div className="rounded-cg-tile border border-[rgba(255,176,136,0.30)] bg-[rgba(255,176,136,0.10)] px-4 py-2 text-[12px] text-cg-peach">
               Backend unreachable — showing offline demo data.
             </div>
           ) : null}
           {errorMessage ? (
-            <div className="rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-2 text-sm text-rose-200">
+            <div className="rounded-cg-tile border border-[rgba(194,82,43,0.40)] bg-[rgba(194,82,43,0.15)] px-4 py-2 text-[13px] text-cg-peach">
               {errorMessage}
             </div>
           ) : null}
-          {!isLoading && !errorMessage && hospitals.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-slate-700 px-4 py-3 text-sm text-slate-400">
+
+          {/* 3-card hero row */}
+          {hospitals.length > 0 ? (
+            <div className="grid gap-3.5 lg:grid-cols-[1.5fr_1fr_1fr]">
+              {lit ? (
+                <HospitalCard
+                  hospital={lit}
+                  variant="lit"
+                  overline="Best match"
+                  onReserve={reserveHospital}
+                  onTrustChipClick={onTrustChipClick}
+                  reserving={reservingId === lit.id}
+                />
+              ) : null}
+              {backups.map((hospital) => (
+                <HospitalCard
+                  key={hospital.id}
+                  hospital={hospital}
+                  variant="glass"
+                  overline="Backup"
+                  onReserve={reserveHospital}
+                  onTrustChipClick={onTrustChipClick}
+                  reserving={reservingId === hospital.id}
+                />
+              ))}
+            </div>
+          ) : !isLoading ? (
+            <div className="rounded-cg-card border border-dashed border-white/[0.10] px-5 py-6 text-[13px] text-cg-mist3">
               No hospitals matched this query. Try broader terms.
             </div>
-          ) : null}
-          <div className="space-y-3">
-            {hospitals.map((hospital) => (
-              <HospitalCard
-                key={hospital.id}
-                hospital={hospital}
-                onReserve={reserveHospital}
-                onTrustChipClick={onTrustChipClick}
-                reserving={reservingId === hospital.id}
-              />
-            ))}
+          ) : (
+            <div className="grid gap-3.5 lg:grid-cols-[1.5fr_1fr_1fr]">
+              {[1, 2, 3].map((i) => (
+                <div
+                  key={i}
+                  className="h-[240px] animate-pulse rounded-cg-card border border-white/[0.05] bg-[rgba(35,35,36,0.85)]"
+                />
+              ))}
+            </div>
+          )}
+
+          {/* map + atomic */}
+          <div className="grid gap-3.5 lg:grid-cols-2">
+            <HospitalMap hospitals={hospitals} />
+            <AtomicBookingTiles state={bookingState} />
           </div>
-        </div>
-        <div className="space-y-4">
-          <HospitalMap hospitals={hospitals} />
-          <AtomicBookingTiles state={bookingState} />
+
+          {/* reasoning */}
           <ReasoningPanel rows={rows} loading={isLoading} />
-        </div>
+        </main>
       </div>
+
       <SourceModal
         open={sourceModal.open}
         title={sourceModal.title}

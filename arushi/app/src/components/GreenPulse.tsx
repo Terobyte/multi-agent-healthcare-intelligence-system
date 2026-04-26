@@ -1,16 +1,16 @@
-import { motion } from "framer-motion";
+interface GreenPulseProps {
+  label?: string;
+  variant?: "on-lit" | "on-glass";
+}
 
-export default function GreenPulse({ label = "Verified live" }: { label?: string }) {
+export default function GreenPulse({ label = "Verified live", variant = "on-glass" }: GreenPulseProps) {
+  const wrap =
+    variant === "on-lit"
+      ? "bg-white/25 text-cg-peach-ink"
+      : "bg-[rgba(74,107,63,0.18)] border border-[rgba(74,107,63,0.30)] text-cg-sage";
   return (
-    <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-300">
-      <span className="relative inline-flex h-2.5 w-2.5">
-        <motion.span
-          className="absolute inline-flex h-full w-full rounded-full bg-emerald-400"
-          animate={{ scale: [1, 1.9], opacity: [0.6, 0] }}
-          transition={{ duration: 1.4, repeat: Infinity, ease: "easeOut" }}
-        />
-        <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-400" />
-      </span>
+    <div className={`inline-flex items-center gap-2 rounded-full px-2.5 py-1 text-[11px] font-semibold backdrop-blur-cg-glass ${wrap}`}>
+      <span className="cg-pulse-dot" />
       {label}
     </div>
   );
