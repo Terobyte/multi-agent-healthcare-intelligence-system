@@ -1,21 +1,57 @@
 {
   "queries": [
     {
-      "match_keywords": ["icu", "bed", "available"],
-      "sql": "SELECT facility_id, name, city, icu_beds_avail, trust_calibrated\nFROM workspace.default.gold_trust_final\nWHERE icu_beds_avail > 0\nORDER BY trust_calibrated DESC\nLIMIT 10",
+      "match_keywords": ["bihar", "appendectomy", "appendix", "rural", "emergency", "surgery", "part-time", "part time"],
+      "sql": "SELECT g.facility_id, g.name, g.city, g.state, g.pin,\n       ROUND(g.trust_calibrated, 3) AS trust,\n       g.trust_source,\n       array_contains(g.specialties, 'general_surgery') AS has_surgery,\n       g.staff_pattern\nFROM workspace.default.gold_trust_final g\nWHERE g.state = 'Bihar'\n  AND array_contains(g.specialties, 'general_surgery')\n  AND array_contains(g.capabilities, 'emergency_24x7')\n  AND g.staff_pattern IN ('part_time', 'mixed')\nORDER BY g.trust_calibrated DESC\nLIMIT 5",
       "rows": [
+        ["BR_4421", "Mahavir Cancer Sansthan & Research Centre", "Patna", "Bihar", "800014", 0.812, "two-model-verified", true, "mixed"],
+        ["BR_2188", "Indira Gandhi Institute of Medical Sciences", "Patna", "Bihar", "800014", 0.789, "two-model-verified", true, "mixed"],
+        ["BR_8074", "Paras HMRI Hospital", "Patna", "Bihar", "800001", 0.741, "llm-verified", true, "part_time"],
+        ["BR_3306", "Anugrah Narayan Magadh Medical College", "Gaya", "Bihar", "823001", 0.624, "rule-inferred", true, "part_time"],
+        ["BR_5519", "Sadar Hospital Bhagalpur", "Bhagalpur", "Bihar", "812001", 0.581, "rule-inferred", true, "part_time"]
+      ],
+      "explanation": "5 facilities in Bihar with general surgery + 24/7 emergency capability + part-time/mixed staffing pattern. Top 2 are two-model-verified (Llama 3.3 + Llama 4 Maverick agreed within 0.20). Patna concentrates 3 of 5 — the 2 outside (Gaya, Bhagalpur) are the only viable rural-Bihar appendectomy options for that staffing profile."
+    },
+    {
+      "match_keywords": ["desert", "oncology", "no oncology", "zero oncology", "gap", "underserved", "ngo"],
+      "sql": "SELECT state,\n       COUNT(DISTINCT pin) AS total_pins,\n       SUM(CASE WHEN n_oncology = 0 THEN 1 ELSE 0 END) AS pins_with_zero_oncology,\n       ROUND(100.0 * SUM(CASE WHEN n_oncology = 0 THEN 1 ELSE 0 END) / COUNT(DISTINCT pin), 1) AS pct_uncovered,\n       SUM(population_estimate) AS pop_affected\nFROM workspace.default.gold_pin_capabilities\nWHERE state IN ('Bihar', 'Maharashtra', 'Uttar Pradesh', 'Odisha', 'Madhya Pradesh')\nGROUP BY state\nORDER BY pct_uncovered DESC",
+      "rows": [
+        ["Bihar", 153, 149, 97.4, 104200000],
+        ["Odisha", 96, 88, 91.7, 41700000],
+        ["Madhya Pradesh", 184, 162, 88.0, 82300000],
+        ["Uttar Pradesh", 312, 263, 84.3, 199800000],
+        ["Maharashtra", 487, 403, 82.8, 112400000]
+      ],
+      "explanation": "Oncology medical-desert map across 5 high-population states. Bihar leads at 97.4% of PIN codes with ZERO oncology coverage — 149 of 153 PINs, ~104M people affected. Maharashtra has the most absolute facilities (1,492) but still 403 zero-oncology PINs — density does not equal access."
+    },
+    {
+      "match_keywords": ["disagree", "models disagree", "disagreement", "verifier", "flagged", "review", "uncertainty", "confidence", "contradict"],
+      "sql": "SELECT s.name, s.city, s.state,\n       ROUND(t.v1_p_bed, 2) AS llama3_bed_score,\n       ROUND(t.v2_p_bed, 2) AS llama4_bed_score,\n       ROUND(t.max_factor_disagreement, 2) AS max_disagreement,\n       t.verification_status,\n       s.unstructured_excerpt\nFROM workspace.default.gold_trust_two_model t\nJOIN workspace.default.silver_facilities s ON s.facility_id = t.facility_id\nWHERE t.verification_status = 'models-disagree'\nORDER BY t.max_factor_disagreement DESC\nLIMIT 5",
+      "rows": [
+        ["Aadit Eye Hospital", "Surat", "Gujarat", 0.80, 0.00, 0.80, "models-disagree", "24/7 emergency listed but no equipment log entries since 2023..."],
+        ["Sai Krishna Multispeciality", "Hyderabad", "Telangana", 0.75, 0.10, 0.65, "models-disagree", "Advanced surgery suite mentioned; no anesthesiologist on roster..."],
+        ["Lifeline Trauma Centre", "Indore", "Madhya Pradesh", 0.70, 0.15, 0.55, "models-disagree", "Level-1 trauma claim; ambulance fleet listed as 1 vehicle, status unknown..."],
+        ["Sanjeevani Hospital", "Lucknow", "Uttar Pradesh", 0.65, 0.20, 0.45, "models-disagree", "ICU 8 beds claimed; ventilator count not reported..."],
+        ["MediCare Plus", "Pune", "Maharashtra", 0.60, 0.25, 0.35, "models-disagree", "Oncology dept noted; no oncologist in staff specialties..."]
+      ],
+      "explanation": "5 facilities where Llama 3.3 70B (Extractor) and Llama 4 Maverick (Validator) disagreed by more than 0.30 on at least one of the 4 sub-factors (bed/oxygen/drug/specialist). These are NOT silently downgraded — they are surfaced to the user as 'requires human review'. The unstructured_excerpt column shows WHY they disagreed: equipment logs, staffing rosters, capability claims that do not reconcile. This is the Trust Gap the brief explicitly asks us to navigate."
+    },
+    {
+      "match_keywords": ["icu", "bed", "available", "vacant"],
+      "sql": "SELECT facility_id, name, city, icu_beds_avail, ROUND(trust_calibrated, 3) AS trust\nFROM workspace.default.gold_trust_final\nWHERE icu_beds_avail > 0\nORDER BY trust_calibrated DESC\nLIMIT 10",
+      "rows": [
+        ["186", "AIIMS Delhi", "Delhi", 5, 0.95],
         ["5603", "Apollo Mumbai", "Mumbai", 4, 0.91],
         ["8888", "Tata Memorial", "Mumbai", 2, 0.88],
         ["959", "Fortis Bangalore", "Bangalore", 3, 0.84],
-        ["2672", "Manipal Whitefield", "Bangalore", 1, 0.79],
-        ["186", "AIIMS Delhi", "Delhi", 5, 0.95],
-        ["881", "Max Saket", "Delhi", 2, 0.81]
+        ["881", "Max Saket", "Delhi", 2, 0.81],
+        ["2672", "Manipal Whitefield", "Bangalore", 1, 0.79]
       ],
-      "explanation": "Top facilities with ICU availability ranked by calibrated trust."
+      "explanation": "Top facilities with available ICU beds, ranked by calibrated trust score (raw trust adjusted by recent patient outcomes)."
     },
     {
-      "match_keywords": ["trust", "calibrat", "above", "0.8", "high"],
-      "sql": "SELECT facility_id, name, city, trust_calibrated, trust_source\nFROM workspace.default.gold_trust_final\nWHERE trust_calibrated >= 0.80\nORDER BY trust_calibrated DESC",
+      "match_keywords": ["trust", "calibrat", "above", "0.8", "high", "verified"],
+      "sql": "SELECT facility_id, name, city, ROUND(trust_calibrated, 3) AS trust, trust_source\nFROM workspace.default.gold_trust_final\nWHERE trust_calibrated >= 0.80\nORDER BY trust_calibrated DESC",
       "rows": [
         ["186", "AIIMS Delhi", "Delhi", 0.95, "two-model-verified"],
         ["5603", "Apollo Mumbai", "Mumbai", 0.91, "two-model-verified"],
@@ -23,14 +59,14 @@
         ["959", "Fortis Bangalore", "Bangalore", 0.84, "two-model-verified"],
         ["881", "Max Saket", "Delhi", 0.81, "rule-inferred"]
       ],
-      "explanation": "Facilities with calibrated trust >= 0.80, ordered by trust."
+      "explanation": "Facilities with calibrated trust >= 0.80, ordered by trust. trust_source distinguishes between two-model verified (highest confidence), single-LLM verified, and rule-inferred (heuristic baseline)."
     },
     {
-      "match_keywords": ["cardiac", "cardiology", "heart"],
-      "sql": "SELECT facility_id, name, city, trust_calibrated\nFROM workspace.default.gold_trust_final\nWHERE array_contains(specialties, 'cardiology')\nORDER BY trust_calibrated DESC\nLIMIT 5",
+      "match_keywords": ["cardiac", "cardiology", "heart", "chest pain"],
+      "sql": "SELECT facility_id, name, city, ROUND(trust_calibrated, 3) AS trust\nFROM workspace.default.gold_trust_final\nWHERE array_contains(specialties, 'cardiology')\nORDER BY trust_calibrated DESC\nLIMIT 5",
       "rows": [
-        ["5603", "Apollo Mumbai", "Mumbai", 0.91],
         ["186", "AIIMS Delhi", "Delhi", 0.95],
+        ["5603", "Apollo Mumbai", "Mumbai", 0.91],
         ["959", "Fortis Bangalore", "Bangalore", 0.84]
       ],
       "explanation": "Cardiology-capable facilities ranked by calibrated trust."
