@@ -1,4 +1,5 @@
 import { motion } from "framer-motion";
+import { Play } from "lucide-react";
 
 export type BookingState = "idle" | "reserving" | "success" | "rollback";
 
@@ -11,21 +12,49 @@ const stateClass = {
   reserving: "border-white/[0.06] bg-[rgba(40,40,42,0.7)] text-cg-mist5",
 } as const;
 
+const stateLabel: Record<BookingState, string> = {
+  idle: "Idle — press Reserve on a hospital",
+  reserving: "Checking 4 resources…",
+  success: "All 4 matched — committed",
+  rollback: "Rolled back — one or more failed",
+};
+
 interface AtomicBookingTilesProps {
   state: BookingState;
   // Optional: surfaced from the booking saga when a leg fails. Falls back to a
   // generic message so the rollback flip never lands silently — color alone
   // does not satisfy "tell the user what went wrong" UX.
   errorMessage?: string;
+  // Optional: when provided, renders an inline "Run match" trigger that fires
+  // a reservation against the first available hospital. Lets the user see the
+  // 4-tile matching animation without scrolling back to a Reserve button.
+  onTriggerDemo?: () => void;
+  demoDisabled?: boolean;
 }
 
 export default function AtomicBookingTiles({
   state,
   errorMessage = "Reservation could not complete",
+  onTriggerDemo,
+  demoDisabled,
 }: AtomicBookingTilesProps) {
   return (
     <div className="rounded-cg-card border border-white/[0.05] bg-[rgba(35,35,36,0.85)] p-4 backdrop-blur-cg-glass">
-      <div className="mb-3 text-sm font-semibold text-cg-ivory">Atomic booking state</div>
+      <div className="mb-1 flex items-center justify-between gap-3">
+        <div className="text-sm font-semibold text-cg-ivory">Atomic booking</div>
+        {onTriggerDemo ? (
+          <button
+            type="button"
+            onClick={onTriggerDemo}
+            disabled={demoDisabled || state === "reserving"}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-cg-peach px-2.5 py-1 text-[11px] font-semibold text-cg-peach-ink transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Play size={11} fill="currentColor" />
+            Run match
+          </button>
+        ) : null}
+      </div>
+      <div className="mb-3 text-[11px] text-cg-mist3">{stateLabel[state]}</div>
       <div className="grid grid-cols-2 gap-2">
         {tileLabels.map((tile, index) => (
           <motion.div

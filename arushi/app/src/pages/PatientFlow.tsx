@@ -237,7 +237,21 @@ export default function PatientFlow() {
             exceeding the viewport so it doesn't block scrolling. */}
         <div className="space-y-4 xl:sticky xl:top-4 xl:self-start xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto xl:pr-1">
           <HospitalMap hospitals={hospitals} />
-          <AtomicBookingTiles state={bookingState} />
+          <AtomicBookingTiles
+            state={bookingState}
+            // Inline trigger — fires the same reserve flow as the per-card
+            // Reserve button against the first non-demoted hospital. Lets the
+            // user demo the 4-tile match animation without scrolling to a card.
+            onTriggerDemo={
+              hospitals.length > 0
+                ? () => {
+                    const target = hospitals.find((h) => !h.demoted) ?? hospitals[0];
+                    void reserveHospital(target.id);
+                  }
+                : undefined
+            }
+            demoDisabled={hospitals.length === 0 || isLoading}
+          />
           <ReasoningPanel rows={rows} loading={isLoading} />
         </div>
       </div>

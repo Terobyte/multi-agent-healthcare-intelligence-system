@@ -80,9 +80,13 @@ function HospitalCard({
           type="button"
           disabled={reserving}
           onClick={() => onReserve(hospital.id)}
-          className="rounded-xl bg-cg-peach px-3 py-2 text-xs font-semibold text-cg-peach-ink transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+          // Loud peach CTA — design rule says only ONE high-saturation peach
+          // surface per view, but the lit-card hero variant was reverted to a
+          // uniform list, so the CTA carries the urgency now. Larger padding
+          // + shadow makes the trigger for the atomic-booking saga obvious.
+          className="rounded-xl bg-cg-peach px-4 py-2.5 text-sm font-semibold text-cg-peach-ink shadow-cg-peach transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {reserving ? "Reserving..." : "Reserve"}
+          {reserving ? "Reserving…" : "Reserve →"}
         </button>
       </div>
 
