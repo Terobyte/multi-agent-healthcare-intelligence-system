@@ -17,62 +17,71 @@
     },
     {
       "match_keywords": ["desert", "oncology", "no oncology", "zero oncology", "gap", "underserved", "ngo"],
-      "sql": "SELECT state,\n       COUNT(DISTINCT pin) AS total_pins,\n       SUM(CASE WHEN n_oncology = 0 THEN 1 ELSE 0 END) AS pins_with_zero_oncology,\n       ROUND(100.0 * SUM(CASE WHEN n_oncology = 0 THEN 1 ELSE 0 END) / COUNT(DISTINCT pin), 1) AS pct_uncovered,\n       SUM(population_estimate) AS pop_affected\nFROM workspace.default.gold_pin_capabilities\nWHERE state IN ('Bihar', 'Maharashtra', 'Uttar Pradesh', 'Odisha', 'Madhya Pradesh')\nGROUP BY state\nORDER BY pct_uncovered DESC",
+      "sql": "SELECT state,\n       COUNT(DISTINCT pincode) AS total_pins,\n       SUM(CASE WHEN n_oncology = 0 THEN 1 ELSE 0 END) AS pins_with_zero_oncology,\n       ROUND(100.0 * SUM(CASE WHEN n_oncology = 0 THEN 1 ELSE 0 END) / COUNT(DISTINCT pincode), 1) AS pct_uncovered\nFROM workspace.default.gold_pin_capabilities\nWHERE state IN ('Bihar', 'Maharashtra', 'Uttar Pradesh', 'Odisha', 'Madhya Pradesh')\nGROUP BY state\nORDER BY pct_uncovered DESC",
       "rows": [
-        ["Bihar", 153, 149, 97.4, 104200000],
-        ["Odisha", 96, 88, 91.7, 41700000],
-        ["Madhya Pradesh", 184, 162, 88.0, 82300000],
-        ["Uttar Pradesh", 312, 263, 84.3, 199800000],
-        ["Maharashtra", 487, 403, 82.8, 112400000]
+        ["Odisha", 64, 63, 98.4],
+        ["Bihar", 153, 149, 97.4],
+        ["Madhya Pradesh", 110, 107, 97.3],
+        ["Uttar Pradesh", 318, 297, 93.4],
+        ["Maharashtra", 443, 403, 91.0]
       ],
-      "explanation": "Oncology medical-desert map across 5 high-population states. Bihar leads at 97.4% of PIN codes with ZERO oncology coverage — 149 of 153 PINs, ~104M people affected. Maharashtra has the most absolute facilities (1,492) but still 403 zero-oncology PINs — density does not equal access."
+      "explanation": "Oncology medical-desert map across 5 high-population states. Odisha leads at 98.4% of PIN codes with ZERO oncology coverage — 63 of 64 PINs. Bihar (149/153, 97.4%) and Madhya Pradesh (107/110, 97.3%) are nearly as bare. Maharashtra has the most absolute facilities (1,506) but still 403 zero-oncology PINs — density does not equal access."
     },
     {
       "match_keywords": ["disagree", "models disagree", "disagreement", "verifier", "flagged", "review", "uncertainty", "confidence", "contradict"],
-      "sql": "SELECT s.name, s.city, s.state,\n       ROUND(t.v1_p_bed, 2) AS llama3_bed_score,\n       ROUND(t.v2_p_bed, 2) AS llama4_bed_score,\n       ROUND(t.max_factor_disagreement, 2) AS max_disagreement,\n       t.verification_status,\n       s.unstructured_excerpt\nFROM workspace.default.gold_trust_two_model t\nJOIN workspace.default.silver_facilities s ON s.facility_id = t.facility_id\nWHERE t.verification_status = 'models-disagree'\nORDER BY t.max_factor_disagreement DESC\nLIMIT 5",
+      "sql": "SELECT s.name, s.city, s.state,\n       ROUND(t.v1_p_bed, 2) AS llama3_bed_score,\n       ROUND(t.v2_p_bed, 2) AS llama4_bed_score,\n       ROUND(t.max_factor_disagreement, 2) AS max_disagreement,\n       t.verification_status,\n       substr(s.description, 1, 90) AS excerpt\nFROM workspace.default.gold_trust_two_model t\nJOIN workspace.default.silver_facilities s ON s.facility_id = t.facility_id\nWHERE t.verification_status = 'models-disagree'\nORDER BY t.max_factor_disagreement DESC\nLIMIT 5",
       "rows": [
-        ["Aadit Eye Hospital", "Surat", "Gujarat", 0.80, 0.00, 0.80, "models-disagree", "24/7 emergency listed but no equipment log entries since 2023..."],
-        ["Sai Krishna Multispeciality", "Hyderabad", "Telangana", 0.75, 0.10, 0.65, "models-disagree", "Advanced surgery suite mentioned; no anesthesiologist on roster..."],
-        ["Lifeline Trauma Centre", "Indore", "Madhya Pradesh", 0.70, 0.15, 0.55, "models-disagree", "Level-1 trauma claim; ambulance fleet listed as 1 vehicle, status unknown..."],
-        ["Sanjeevani Hospital", "Lucknow", "Uttar Pradesh", 0.65, 0.20, 0.45, "models-disagree", "ICU 8 beds claimed; ventilator count not reported..."],
-        ["MediCare Plus", "Pune", "Maharashtra", 0.60, 0.25, 0.35, "models-disagree", "Oncology dept noted; no oncologist in staff specialties..."]
+        ["Aadit Eye Hospital", "Ahmedabad", "Gujarat", 0.80, 0.00, 0.80, "models-disagree", "Compassionate ophthalmologist with 10 years of experience; specializing in eye surgery."],
+        ["Centre for Lasik Delhi", "Delhi", "Delhi", 0.80, 0.10, 0.70, "models-disagree", "Centre for Lasik Delhi is a joint effort by a leading Lasik Laser Eye Centres in Delhi, of"],
+        ["APEXX Diagnostic", "Arambagh", "West Bengal", 0.20, 0.20, 0.70, "models-disagree", "Computerised Pathology, Digital X-Ray, OPG, Memographi, Echo, Endoscopy, Colonocopy, TMT, "],
+        ["CLIO Eye Care", "Gurugram", "Haryana", 0.80, 0.20, 0.60, "models-disagree", "CLIO Eye Care is a superspeciality eye care centre situated in Sector 47, Gurugram. It is "],
+        ["Alcuris Healthcare", "Mulund", "Maharashtra", 0.20, 0.80, 0.60, "models-disagree", "ALCURIS HEALTHCARE PRIVATE LIMITED is a Private Limited Company incorporated on Mar 11, 20"]
       ],
-      "explanation": "5 facilities where Llama 3.3 70B (Extractor) and Llama 4 Maverick (Validator) disagreed by more than 0.30 on at least one of the 4 sub-factors (bed/oxygen/drug/specialist). These are NOT silently downgraded — they are surfaced to the user as 'requires human review'. The unstructured_excerpt column shows WHY they disagreed: equipment logs, staffing rosters, capability claims that do not reconcile. This is the Trust Gap the brief explicitly asks us to navigate."
+      "explanation": "5 facilities where Llama 3.3 70B (Extractor) and Llama 4 Maverick (Validator) disagreed by 0.60+ on at least one of the 4 sub-factors (bed/oxygen/drug/specialist). These are NOT silently downgraded — they are surfaced to the user as 'requires human review'. The description excerpt shows the source material the two models read differently. This is the Trust Gap the brief explicitly asks us to navigate."
     },
     {
-      "match_keywords": ["icu", "bed", "available", "vacant"],
-      "sql": "SELECT facility_id, name, city, icu_beds_avail, ROUND(trust_calibrated, 3) AS trust\nFROM workspace.default.gold_trust_final\nWHERE icu_beds_avail > 0\nORDER BY trust_calibrated DESC\nLIMIT 10",
+      "match_keywords": ["icu", "bed", "available", "vacant", "capacity"],
+      "sql": "SELECT g.facility_id, g.name, g.city, CAST(g.capacity AS INT) AS bed_capacity, ROUND(v.trust_calibrated, 3) AS trust\nFROM workspace.default.gold_trust_final g\nJOIN workspace.default.v_trust_calibrated v ON v.facility_id = g.facility_id\nWHERE g.capacity IS NOT NULL AND g.capacity > 0\nORDER BY v.trust_calibrated DESC\nLIMIT 8",
       "rows": [
-        ["186", "AIIMS Delhi", "Delhi", 5, 0.95],
-        ["5603", "Apollo Mumbai", "Mumbai", 4, 0.91],
-        ["8888", "Tata Memorial", "Mumbai", 2, 0.88],
-        ["959", "Fortis Bangalore", "Bangalore", 3, 0.84],
-        ["881", "Max Saket", "Delhi", 2, 0.81],
-        ["2672", "Manipal Whitefield", "Bangalore", 1, 0.79]
+        ["6776", "Kiran Rehab Centre", "Hyderabad", 100, 0.9],
+        ["5603", "INHS Sanjivani", "Kochi", 333, 0.888],
+        ["849", "Anurag Rehabilitation Centre - Umabagh Nampally", "Hyderabad", 20, 0.862],
+        ["5504", "Hope Health Care Hospital", "Ahmedabad", 10, 0.862],
+        ["6722", "Kidney and Urology Super Speciality Institute", "Pune", 25, 0.862],
+        ["1187", "Ashray Physiotherapy Care", "Anand", 37, 0.862],
+        ["5786", "International Knee And Orthopaedic Centre", "Bengaluru", 50, 0.86],
+        ["1834", "CHARUSAT Hospital", "Petlad", 450, 0.825]
       ],
-      "explanation": "Top facilities with available ICU beds, ranked by calibrated trust score (raw trust adjusted by recent patient outcomes)."
+      "explanation": "Top facilities with reported bed capacity, ranked by calibrated trust score (raw trust adjusted by recent patient outcomes — joined from v_trust_calibrated, where the calibration math lives)."
     },
     {
       "match_keywords": ["trust", "calibrat", "above", "0.8", "high", "verified"],
-      "sql": "SELECT facility_id, name, city, ROUND(trust_calibrated, 3) AS trust, trust_source\nFROM workspace.default.gold_trust_final\nWHERE trust_calibrated >= 0.80\nORDER BY trust_calibrated DESC",
+      "sql": "SELECT facility_id, name, city, ROUND(trust_calibrated, 3) AS trust, trust_source\nFROM workspace.default.v_trust_calibrated\nWHERE trust_calibrated >= 0.80\nORDER BY trust_calibrated DESC\nLIMIT 10",
       "rows": [
-        ["186", "AIIMS Delhi", "Delhi", 0.95, "two-model-verified"],
-        ["5603", "Apollo Mumbai", "Mumbai", 0.91, "two-model-verified"],
-        ["8888", "Tata Memorial", "Mumbai", 0.88, "llm-verified"],
-        ["959", "Fortis Bangalore", "Bangalore", 0.84, "two-model-verified"],
-        ["881", "Max Saket", "Delhi", 0.81, "rule-inferred"]
+        ["6776", "Kiran Rehab Centre", "Hyderabad", 0.9, "rule-inferred"],
+        ["5603", "INHS Sanjivani", "Kochi", 0.888, "two-model-verified"],
+        ["5845", "J.K's Family Homeocare", "Palacole", 0.883, "rule-inferred"],
+        ["4331", "Dr. Shiromani Multispeciality Dental Clinic", "Roorkee", 0.883, "rule-inferred"],
+        ["6446", "Kamal Dental Clinic & Odontic Implant Center", "Kota", 0.883, "rule-inferred"],
+        ["181", "Aadhya Pain Management Centre", "Jaipur", 0.883, "rule-inferred"],
+        ["2672", "Delhi Liver Transplant", "Delhi", 0.863, "two-model-verified"],
+        ["44", "A & M Dental Station", "Delhi", 0.862, "rule-inferred"],
+        ["289", "Aaxis Kidney & Prostate Center", "Bangalore", 0.862, "rule-inferred"],
+        ["332", "Abhinav Dental Solutions, Rajendra Nagar", "Patna", 0.862, "rule-inferred"]
       ],
-      "explanation": "Facilities with calibrated trust >= 0.80, ordered by trust. trust_source distinguishes between two-model verified (highest confidence), single-LLM verified, and rule-inferred (heuristic baseline)."
+      "explanation": "Facilities with calibrated trust >= 0.80, ordered by trust. trust_source distinguishes between two-model verified (139 nationwide), single-LLM verified (13), and rule-inferred (9,738 baseline). The view v_trust_calibrated layers reputation_score from outcome_feedback on top of the raw trust_score."
     },
     {
       "match_keywords": ["cardiac", "cardiology", "heart", "chest pain"],
-      "sql": "SELECT facility_id, name, city, ROUND(trust_calibrated, 3) AS trust\nFROM workspace.default.gold_trust_final\nWHERE array_contains(specialties, 'cardiology')\nORDER BY trust_calibrated DESC\nLIMIT 5",
+      "sql": "SELECT g.facility_id, g.name, g.city, ROUND(v.trust_calibrated, 3) AS trust\nFROM workspace.default.gold_trust_final g\nJOIN workspace.default.v_trust_calibrated v ON v.facility_id = g.facility_id\nWHERE array_contains(g.specialties, 'cardiology')\nORDER BY v.trust_calibrated DESC\nLIMIT 5",
       "rows": [
-        ["186", "AIIMS Delhi", "Delhi", 0.95],
-        ["5603", "Apollo Mumbai", "Mumbai", 0.91],
-        ["959", "Fortis Bangalore", "Bangalore", 0.84]
+        ["5603", "INHS Sanjivani", "Kochi", 0.888],
+        ["693", "Allied Doctors House", "Kalyan", 0.862],
+        ["849", "Anurag Rehabilitation Centre - Umabagh Nampally", "Hyderabad", 0.862],
+        ["536", "Ajanta Heart Care & Diagnostic Centre", "Ghaziabad", 0.862],
+        ["1151", "Asha Heart Clinic", "Nashik", 0.862]
       ],
-      "explanation": "Cardiology-capable facilities ranked by calibrated trust."
+      "explanation": "Cardiology-capable facilities ranked by calibrated trust. INHS Sanjivani (Kochi) tops the list at 0.888 with two-model verification — Llama 3.3 and Llama 4 Maverick agreed on its bed/oxygen/drug/specialist scores."
     }
   ]
 }

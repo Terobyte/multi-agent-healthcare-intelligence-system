@@ -30,11 +30,11 @@ A second app (NGO Dashboard) maps **3,736 Indian PINs** by capability gaps — e
 
 ## Killing features
 
-- **Trust calibration via two-model LLM consensus.** Llama 3.3 70B (Extractor) + Llama 4 Maverick (Validator) score each facility on 4 sub-factors; agreement-band logic decides whether the trust score is `verified`, `single-source`, or `disagreement`. ~$0.30 total LLM cost for 256 facilities.
+- **Trust calibration via two-model LLM consensus.** Llama 3.3 70B (Extractor) + Llama 4 Maverick (Validator) score each facility on 4 sub-factors; agreement-band logic decides whether the trust score is `verified`, `single-source`, or `disagreement`. 262 facilities processed by the LLM path so far: 139 two-model verified, 110 `models-disagree`, 13 single-LLM verified. ~$0.30 total LLM cost.
 - **Atomic booking saga.** `txn_atomic` + 4 resource tables (bed, ambulance, doctor, drug). Compensating-action rollback on any leg failure. Demo includes a deliberate `ambulance unavailable` saga that rolls back all four resources.
 - **Outcome learning loop.** Patient pings after care write to `outcome_feedback` → `v_trust_calibrated` view recomputes trust on the fly. Demo arc: *Aradhna 0.831 → 0.350* after 6 negative outcomes.
 - **Vernacular voice triage.** Web Speech API for Hindi/Urdu input on patient side; Fish Audio TTS narrates ambulance dispatch in Hindi/Urdu after `/book` commits.
-- **NGO Desert Map.** Per-PIN capability heatmap exposes coverage gaps (density ≠ access — *Maharashtra has 1,492 facilities but 403 PINs with zero oncology*).
+- **NGO Desert Map.** Per-PIN capability heatmap exposes coverage gaps (density ≠ access — *Maharashtra has 1,506 facilities but 403 of 443 PINs (91.0%) carry zero oncology*).
 - **Reasoning stream (SSE).** `/sse` emits structured events as agents decide — frontend renders the chain in real time, no polling.
 - **Token-scrubbing logger.** Global `LogRecordFactory` redacts `dapi*`, `sk-*`, and Fish-key shapes from every log line and traceback before they hit any handler.
 
