@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: aarogyaNet-api
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: DATABRICKS_HOST
+        sync: false          # set in Render dashboard / env-group
+      - key: DATABRICKS_TOKEN
+        sync: false
+      - key: DATABRICKS_WAREHOUSE_ID
+        sync: false
+      - key: VS_ENDPOINT
+        value: mubarak_vs   # non-secret default; override in dashboard if needed
