@@ -28,15 +28,14 @@ export default function App() {
   return (
     <div className="min-h-screen bg-cg-page text-cg-ivory">
       <div className="mx-auto max-w-[1304px] px-6 pb-10 pt-6">
-        <div className="mb-4 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5">
-            <div className="h-7 w-7 rounded-lg bg-cg-grad-logo-peach" />
-            <span className="text-[15px] font-semibold tracking-cg-tight text-cg-ivory">
-              CareGuide
-            </span>
-            <span className="ml-2 text-[11px] uppercase tracking-cg-overline-wide text-cg-mist4">
+        <header className="mb-6 flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-cg-overline-wide text-cg-peach">
               Hackathon demo
-            </span>
+            </p>
+            <h1 className="mt-1 text-[28px] font-semibold tracking-cg-tight text-cg-ivory">
+              Healthcare Intelligence
+            </h1>
           </div>
           <div className="inline-flex rounded-full border border-white/[0.06] bg-cg-stage/70 p-1 backdrop-blur-cg-glass">
             {tabs.map((tab) => {
@@ -64,7 +63,7 @@ export default function App() {
               );
             })}
           </div>
-        </div>
+        </header>
 
         <AnimatePresence mode="wait">
           <motion.div
