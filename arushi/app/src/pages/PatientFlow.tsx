@@ -36,7 +36,10 @@ export default function PatientFlow() {
     evidence: "",
   });
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [degraded, setDegraded] = useState(false);
+  // Initialize from isDegraded() so the banner appears synchronously when the
+  // app is built without VITE_PUBLIC_URL — otherwise users see fake data with
+  // no warning until the first recommend() call resolves.
+  const [degraded, setDegraded] = useState<boolean>(() => isDegraded());
   // Block setState after unmount + tag every async run with a request id so a
   // stale stream from a prior recommend() can be ignored when the user submits
   // a new query mid-flight (race-condition fix from audit).
@@ -98,9 +101,16 @@ export default function PatientFlow() {
       const result = await reserve({ hospitalId });
       if (!isMountedRef.current) return;
       if (!result.success) {
-        // Backend returned ROLLED_BACK or REJECTED — treat as failure visually.
+        // Backend returned ROLLED_BACK or REJECTED — surface the real reason
+        // (e.g. "duplicate active transaction", "ambulance unavailable") so
+        // demo viewers see WHY the saga rolled back, not a generic string.
         setBookingState("rollback");
-        setErrorMessage("Reservation rolled back. Try a different hospital.");
+        const detail = result.reason || result.commit_error || null;
+        setErrorMessage(
+          detail
+            ? `Reservation rolled back: ${detail}.`
+            : "Reservation rolled back. Try a different hospital.",
+        );
         bookingTimersRef.current.push(
           window.setTimeout(() => isMountedRef.current && setBookingState("idle"), 1300),
         );

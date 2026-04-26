@@ -45,8 +45,11 @@ async function mockRecommend(query: string): Promise<RecommendResponse> {
 // Sticky flag — flips to true on the first failed real-backend call so the UI
 // can surface "demo data only" instead of silently lying. Stays sticky until a
 // successful real call clears it (so a flapping connection doesn't strobe).
+// When HAS_REAL_BACKEND is false the app is degraded by definition, so we
+// surface that synchronously — without it, the banner only appears after the
+// first recommend() round-trips, which is too late for the user.
 let _degraded = false;
-export const isDegraded = () => _degraded;
+export const isDegraded = () => _degraded || !HAS_REAL_BACKEND;
 
 export async function recommend(request: RecommendRequest): Promise<RecommendResponse> {
   const query = request.query.trim();
@@ -71,6 +74,9 @@ export async function recommend(request: RecommendRequest): Promise<RecommendRes
     }
   }
 
+  // No real backend wired up — that IS degraded mode by definition. Without
+  // this flag the UI silently shows fake hospitals as if they were live data.
+  _degraded = true;
   return mockRecommend(query);
 }
 
@@ -85,6 +91,10 @@ export async function reserve(request: ReserveRequest): Promise<ReserveResponse>
     return {
       success: out.status === "COMMITTED",
       referenceId: out.transaction_id ?? `RSV-${request.hospitalId}-FAILED`,
+      status: out.status,
+      reason: out.reason,
+      commit_error: out.commit_error,
+      transaction_id: out.transaction_id,
     };
   }
 

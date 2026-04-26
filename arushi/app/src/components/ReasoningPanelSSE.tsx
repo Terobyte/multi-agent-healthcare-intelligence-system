@@ -14,6 +14,11 @@ type Status = "idle" | "streaming" | "done" | "error";
 
 type StreamedEvent = ReasoningPanelEvent & { kind: ReasoningPanelEvent["agent"] | "done" | "error" };
 
+// Cap retained events so a noisy LLM (or a long demo session) can't bloat
+// React state to the point of OOM. The panel only shows ~10 at a time anyway.
+const MAX_EVENTS = 200;
+const cap = (xs: StreamedEvent[]) => (xs.length > MAX_EVENTS ? xs.slice(-MAX_EVENTS) : xs);
+
 const COLOR_BY_AGENT: Record<string, string> = {
   triage: "border-blue-500/60",
   extractor: "border-purple-500/60",
@@ -61,12 +66,12 @@ export default function ReasoningPanelSSE({ sessionId, useDemo }: Props) {
     const push = (kind: StreamedEvent["kind"]) => (ev: MessageEvent<string>) => {
       try {
         const data = JSON.parse(ev.data);
-        setEvents((prev) => [...prev, { ...data, kind }]);
+        setEvents((prev) => cap([...prev, { ...data, kind }]));
       } catch {
-        setEvents((prev) => [
+        setEvents((prev) => cap([
           ...prev,
           { agent: (kind as ReasoningPanelEvent["agent"]) ?? "stream_tick", token: ev.data, trace_id: "", ts: "", kind },
-        ]);
+        ]));
       }
     };
 
@@ -84,7 +89,7 @@ export default function ReasoningPanelSSE({ sessionId, useDemo }: Props) {
       if (typeof msg.data === "string" && msg.data.length > 0) {
         push("error")(msg);
       } else {
-        setEvents((prev) => [
+        setEvents((prev) => cap([
           ...prev,
           {
             agent: "stream_tick",
@@ -93,7 +98,7 @@ export default function ReasoningPanelSSE({ sessionId, useDemo }: Props) {
             ts: "",
             kind: "error",
           },
-        ]);
+        ]));
       }
       setStatus("error");
       es.close();

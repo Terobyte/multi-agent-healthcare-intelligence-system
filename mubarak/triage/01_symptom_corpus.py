@@ -18,7 +18,7 @@ Usage:
 
 Env vars: DBX_PROFILE (default tero2), DBX_WH (default 10fff96dd6d936b5)
 """
-import json, os, subprocess, sys, tempfile
+import atexit, json, os, subprocess, sys, tempfile
 from pathlib import Path
 
 import pandas as pd
@@ -70,8 +70,9 @@ with open(JSONL) as f:
             "text":          r["text"],
             "specialty":     r["specialty"],
             "urgency":       int(r["urgency"]),
-            "language":      r["language"],
-            "symptoms_json": json.dumps(r["symptoms"], ensure_ascii=False),
+            "language":      r.get("language", "en"),
+            "symptoms_json": json.dumps(r.get("symptoms", []), ensure_ascii=False),
+            "red_flags":     r.get("red_flags", []),
         })
 
 df = pd.DataFrame(rows)
@@ -83,7 +84,12 @@ for sp in ("Cardiology", "Orthopedics", "Nephrology"):
     assert n > 0, f"required specialty missing: {sp}"
     print(f"  {sp}: {n} entries ✓")
 
-local_parquet = tempfile.mktemp(suffix=".parquet")
+# mkstemp is the safe non-deprecated variant (mktemp has a TOCTOU race) and
+# atexit cleanup ensures the parquet is removed on normal exit / Ctrl-C, so
+# repeated runs don't leak files into /tmp.
+_fd, local_parquet = tempfile.mkstemp(suffix=".parquet")
+os.close(_fd)
+atexit.register(lambda p=local_parquet: os.path.exists(p) and os.unlink(p))
 df.to_parquet(local_parquet, index=False)
 print(f"  parquet: {os.path.getsize(local_parquet)} bytes → {local_parquet}")
 
@@ -114,6 +120,7 @@ CREATE OR REPLACE TABLE {TABLE} (
   urgency       INT,
   language      STRING,
   symptoms_json STRING,
+  red_flags     ARRAY<STRING>,
   CONSTRAINT symptom_corpus_pk PRIMARY KEY (id)
 ) TBLPROPERTIES (delta.enableChangeDataFeed = true)
 """)
@@ -125,7 +132,7 @@ print("  CREATE ✓")
 print(f"→ inserting rows from parquet volume...")
 sql(f"""
 INSERT INTO {TABLE}
-SELECT id, text, specialty, urgency, language, symptoms_json
+SELECT id, text, specialty, urgency, language, symptoms_json, red_flags
 FROM parquet.`{VOLUME_PATH}`
 """)
 print("  INSERT ✓")

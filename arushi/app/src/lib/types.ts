@@ -47,6 +47,12 @@ export interface ReserveRequest {
 export interface ReserveResponse {
   success: boolean;
   referenceId: string;
+  // Forwarded from canonical backend so the UI can show the real failure cause
+  // (e.g. "duplicate active transaction") instead of a generic rollback string.
+  status?: string;
+  reason?: string;
+  commit_error?: string | null;
+  transaction_id?: string | null;
 }
 
 export interface ReasoningMessage {

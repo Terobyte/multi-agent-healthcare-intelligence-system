@@ -14,6 +14,31 @@ import type {
 const DEFAULT_USER_LAT = 19.076;
 const DEFAULT_USER_LON = 72.8777;
 
+// One-time geolocation probe — populated by navigator.geolocation success
+// callback when the user grants access. Stays null on permission-deny / no-API,
+// in which case adaptHospital falls back to the Mumbai default. Cached per
+// session to avoid re-prompting on every adaptHospital call.
+let _cachedUserLat: number | null = null;
+let _cachedUserLon: number | null = null;
+
+function ensureUserLocation(): void {
+  if (_cachedUserLat !== null && _cachedUserLon !== null) return;
+  if (typeof navigator === "undefined" || !navigator.geolocation) return;
+  try {
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        _cachedUserLat = pos.coords.latitude;
+        _cachedUserLon = pos.coords.longitude;
+      },
+      () => {
+        /* permission denied — keep using Mumbai fallback */
+      },
+    );
+  } catch {
+    /* browser refused or no permissions API — silent fallback */
+  }
+}
+
 function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371;
   const toRad = (deg: number) => (deg * Math.PI) / 180;
@@ -57,8 +82,9 @@ export function adaptHospital(
   h: CanonicalHospital,
   opts: AdaptOptions = {},
 ): Hospital {
-  const userLat = opts.userLat ?? DEFAULT_USER_LAT;
-  const userLon = opts.userLon ?? DEFAULT_USER_LON;
+  ensureUserLocation();
+  const userLat = opts.userLat ?? _cachedUserLat ?? DEFAULT_USER_LAT;
+  const userLon = opts.userLon ?? _cachedUserLon ?? DEFAULT_USER_LON;
   const distanceKm = Math.round(haversineKm(userLat, userLon, h.lat, h.lon) * 10) / 10;
   const etaMinutes = Math.max(5, Math.round(distanceKm * 3));
   const demoted =

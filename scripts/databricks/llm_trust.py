@@ -28,7 +28,7 @@ def db_sql(sql):
 def db_llm(prompt, max_tokens=400):
     payload = json.dumps({
         "messages":[{"role":"user","content":prompt}],
-        "max_tokens":max_tokens, "temperature":0.1
+        "max_tokens":max_tokens, "temperature":0
     })
     r = subprocess.run(["databricks","api","post","-p",PROFILE,f"/serving-endpoints/{ENDPOINT}/invocations","--json",payload],
                        capture_output=True, text=True, timeout=120)
@@ -62,11 +62,46 @@ Capacity: {cap if cap else 'unknown'}
 Score 4 factors (0-1) with brief reasoning. Return ONLY valid JSON, nothing else:
 {{"p_bed": 0.0-1.0, "p_oxygen": 0.0-1.0, "p_drug": 0.0-1.0, "p_specialist": 0.0-1.0, "ci": 0.0-0.3, "reasoning": "<one sentence per factor>"}}"""
 
+def _balanced_json_objects(text):
+    """Yield every balanced top-level {...} substring. String-aware so braces
+    inside JSON string literals don't throw off the depth counter."""
+    depth = 0
+    start = -1
+    in_string = False
+    escape = False
+    for i, c in enumerate(text):
+        if in_string:
+            if escape:
+                escape = False
+            elif c == "\\":
+                escape = True
+            elif c == '"':
+                in_string = False
+            continue
+        if c == '"':
+            in_string = True
+        elif c == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif c == "}" and depth > 0:
+            depth -= 1
+            if depth == 0 and start >= 0:
+                yield text[start:i + 1]
+                start = -1
+
+
 def parse_response(text):
-    """Extract JSON from LLM response, handling markdown wrapping. Never raises."""
+    """Extract JSON from LLM response, handling markdown wrapping and reasoning
+    text that contains stray braces (e.g. "score range is {0,1}"). Never raises.
+
+    Naive `text.index("{") .. text.rindex("}")` slicing was brittle: any brace
+    in the LLM's prose would shift the start index and corrupt the slice. Now
+    we walk every balanced object and pick the LAST one that parses as JSON —
+    LLMs put the answer at the end after their reasoning prose.
+    """
     try:
         text = (text or "").strip()
-        # strip ```json ... ``` or ``` ... ``` wrappers (handles single backtick edge case too)
         if text.startswith("```"):
             parts = text.split("```")
             if len(parts) >= 2:
@@ -76,9 +111,18 @@ def parse_response(text):
             text = text.strip()
         if "{" not in text or "}" not in text:
             return {"_error": "no JSON braces in response", "_raw": text[:300]}
-        start = text.index("{"); end = text.rindex("}") + 1
-        parsed = json.loads(text[start:end])
-        # clamp probability fields to [0, 1] — defensive against LLM returning 1.5 / -0.2 / etc.
+        candidates = list(_balanced_json_objects(text))
+        parsed = None
+        last_err = None
+        for cand in reversed(candidates):
+            try:
+                parsed = json.loads(cand)
+                break
+            except json.JSONDecodeError as e:
+                last_err = e
+                continue
+        if parsed is None:
+            return {"_error": f"no parseable JSON object: {last_err}", "_raw": text[:300]}
         for k in ("p_bed", "p_oxygen", "p_drug", "p_specialist", "ci"):
             if k in parsed and isinstance(parsed[k], (int, float)):
                 parsed[k] = max(0.0, min(1.0, float(parsed[k])))
@@ -132,7 +176,7 @@ with cf.ThreadPoolExecutor(max_workers=10) as ex:
             print(f"  futerr: {e}", flush=True)
 
 # Save to JSONL
-with open(OUT, "w") as f:
+with open(OUT, "w", encoding="utf-8") as f:
     for r in results:
         f.write(json.dumps(r) + "\n")
 print(f"\nDone. Saved {len(results)} results to {OUT}")

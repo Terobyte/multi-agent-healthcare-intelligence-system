@@ -5,9 +5,14 @@ plus a terminal `data: [DONE]`. We strip the SSE prefix and yield the raw JSON
 so the caller can re-frame it under our own event-name vocabulary (triage,
 extractor, validator, router, transfer).
 """
+import json
+import logging
+
 import httpx
 
 from app.settings import settings
+
+logger = logging.getLogger(__name__)
 
 
 async def stream_endpoint(endpoint: str, messages: list):
@@ -29,4 +34,15 @@ async def stream_endpoint(endpoint: str, messages: list):
                 # OpenAI-compat terminal sentinel; not parseable as JSON.
                 if payload == "[DONE]":
                     return
+                # Defensive boundary: drop unparseable chunks so a single bit
+                # of LLM noise doesn't tear down the entire stream. The
+                # downstream consumer can then trust whatever we yield.
+                try:
+                    json.loads(payload)
+                except json.JSONDecodeError:
+                    logger.warning(
+                        "llm_stream_dropped_malformed_chunk endpoint=%s payload=%s",
+                        endpoint, payload[:120],
+                    )
+                    continue
                 yield payload

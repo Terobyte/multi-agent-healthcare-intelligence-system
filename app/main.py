@@ -163,16 +163,20 @@ def _fm_endpoint_count(ttl_sec: int = 60, timeout: float = 8.0) -> Optional[int]
     try:
         future = _fm_executor.submit(lambda: len(fm_client().list_endpoints()))
         _ep_cache["n"] = future.result(timeout=timeout)
+        _ep_cache["ts"] = now
     except Exception:
-        # Throttled by ttl_sec — no log storm even during sustained outage.
-        logger.warning("fm_probe_failed last_known=%s", _ep_cache["n"], exc_info=True)
-    _ep_cache["ts"] = now
+        # Don't refresh ts on failure — otherwise a transient outage pins the
+        # cache to "degraded" for ttl_sec even after the endpoint recovers.
+        # Throttled to ttl_sec/2 below to avoid a log storm during sustained outage.
+        if (now - _ep_cache.get("ts_log", 0.0)) > (ttl_sec / 2):
+            logger.warning("fm_probe_failed last_known=%s", _ep_cache["n"], exc_info=True)
+            _ep_cache["ts_log"] = now
     return _ep_cache["n"]
 
 
 @app.get("/health")
-def health():
-    n = _fm_endpoint_count()
+async def health():
+    n = await asyncio.to_thread(_fm_endpoint_count)
     healthy = n is not None and n > 0
     return {
         "status": "ok" if healthy else "degraded",
@@ -195,6 +199,10 @@ def book(request: Request, req: BookRequest):
         # ValidationError HERE, not later in FastAPI's response serializer.
         return BookingOutput(**book_atomic(req.facility_id, req.patient_id, {}))
     except Exception:
+        # Catch infra failures (databricks-sql Bearer token in the message,
+        # network IO) here so the LogRecord factory at module top scrubs them
+        # before any handler — and so the demo gets a structured REJECTED
+        # response instead of a 500 that leaks the token via uvicorn.
         logger.exception("book_endpoint_unhandled facility=%s patient=%s", req.facility_id, req.patient_id)
         return BookingOutput(
             transaction_id=None, status="REJECTED",
@@ -206,6 +214,10 @@ def book(request: Request, req: BookRequest):
 # Order matches the reasoning-panel pipeline. Real agents (Mubarak's wiring)
 # will replace these placeholder ticks with token-by-token model output.
 AGENT_ORDER = ["triage", "extractor", "validator", "router", "transfer"]
+
+# Wall-clock cadence for SSE keepalive. nginx/Render LB idle-close at ~30-60s of
+# silence — pinging every 10s keeps the connection alive even when agents stall.
+SSE_HEARTBEAT_INTERVAL_S = float(os.getenv("SSE_HEARTBEAT_INTERVAL_S", "10"))
 
 
 def _evt(agent: str, token: str, trace_id: str) -> str:
@@ -224,23 +236,63 @@ async def sse(session_id: str, request: Request):
     trace_id = str(uuid4())
 
     async def gen():
+        # Heartbeat MUST run on a wall-clock timer, not piggy-back on agent
+        # emission. Old impl only pinged when an agent finished AND >15s had
+        # passed — so fast agents (no gate trip) and slow agents (blocked in
+        # await) both broke it, and the proxy idle-closed the stream.
+        queue: asyncio.Queue = asyncio.Queue()
+        DONE = object()
+
+        async def heartbeat():
+            try:
+                while True:
+                    await asyncio.sleep(SSE_HEARTBEAT_INTERVAL_S)
+                    await queue.put("event: ping\ndata: {}\n\n")
+            except asyncio.CancelledError:
+                pass
+
+        async def producer():
+            try:
+                for agent in AGENT_ORDER:
+                    if await request.is_disconnected():
+                        logger.info("sse_client_disconnected trace=%s at=%s", trace_id, agent)
+                        return
+                    await queue.put(_evt(agent, f"{agent} starting", trace_id))
+                    await asyncio.sleep(0.2)
+                    await queue.put(_evt(agent, f"{agent} done", trace_id))
+                await queue.put(
+                    f"event: done\ndata: {json.dumps({'session_id': session_id, 'trace_id': trace_id})}\n\n"
+                )
+            except Exception as e:
+                logger.exception("sse_failed trace=%s", trace_id)
+                await queue.put(
+                    f"event: error\ndata: {json.dumps({'code':'sse_error','message':str(e)[:200]})}\n\n"
+                )
+                await queue.put(
+                    f"event: done\ndata: {json.dumps({'session_id': session_id, 'trace_id': trace_id})}\n\n"
+                )
+            finally:
+                await queue.put(DONE)
+
+        hb_task = asyncio.create_task(heartbeat())
+        prod_task = asyncio.create_task(producer())
+
         yield "event: ping\ndata: {}\n\n"
-        last_ping = time.time()
         try:
-            for agent in AGENT_ORDER:
-                if await request.is_disconnected():
-                    logger.info("sse_client_disconnected trace=%s at=%s", trace_id, agent)
-                    return
-                yield _evt(agent, f"{agent} starting", trace_id)
-                await asyncio.sleep(0.2)
-                yield _evt(agent, f"{agent} done", trace_id)
-                if time.time() - last_ping > 15:
-                    yield "event: ping\ndata: {}\n\n"
-                    last_ping = time.time()
-            yield f"event: done\ndata: {json.dumps({'session_id': session_id, 'trace_id': trace_id})}\n\n"
-        except Exception as e:
-            logger.exception("sse_failed trace=%s", trace_id)
-            yield f"event: error\ndata: {json.dumps({'code':'sse_error','message':str(e)[:200]})}\n\n"
+            while True:
+                chunk = await queue.get()
+                if chunk is DONE:
+                    break
+                yield chunk
+        finally:
+            hb_task.cancel()
+            if not prod_task.done():
+                prod_task.cancel()
+            for t in (hb_task, prod_task):
+                try:
+                    await t
+                except (asyncio.CancelledError, Exception):
+                    pass
 
     return StreamingResponse(
         gen(),
