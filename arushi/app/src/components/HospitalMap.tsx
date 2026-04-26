@@ -3,23 +3,33 @@ import { useEffect, useMemo, useRef } from "react";
 import { MapContainer, Marker, TileLayer, Tooltip, useMap } from "react-leaflet";
 import type { Hospital } from "../lib/types";
 
-type Tier = "best" | "backup" | "faded";
+// Availability comes from the average of all four trust signals (Bed / Oxygen
+// / Drug / Specialist). 3 buckets, each with its own warm-palette dot:
+//   high   sage    avg ≥ 0.85   = ready, lit pulse-eligible
+//   ok     peach   avg ≥ 0.65   = workable
+//   low    deep    avg < 0.65 OR demoted = degraded
+type Availability = "high" | "ok" | "low";
 
-function tierFor(hospital: Hospital, isFirstNonDemoted: boolean): Tier {
-  if (hospital.demoted) return "faded";
-  if (isFirstNonDemoted) return "best";
-  return "backup";
+function availabilityFor(hospital: Hospital): Availability {
+  if (hospital.demoted) return "low";
+  if (hospital.trustSignals.length === 0) return "low";
+  const avg =
+    hospital.trustSignals.reduce((sum, s) => sum + s.score, 0) /
+    hospital.trustSignals.length;
+  if (avg >= 0.85) return "high";
+  if (avg >= 0.65) return "ok";
+  return "low";
 }
 
-function makeIcon(tier: Tier): L.DivIcon {
-  const styles: Record<Tier, string> = {
-    best: "background:#87A878;box-shadow:0 0 0 4px rgba(135,168,120,0.25);",
-    backup: "background:#FFB088;box-shadow:0 0 0 4px rgba(255,176,136,0.25);",
-    faded: "background:#5A5550;box-shadow:0 0 0 3px rgba(255,255,255,0.04);opacity:0.7;",
+function makeIcon(level: Availability): L.DivIcon {
+  const styles: Record<Availability, string> = {
+    high: "background:#87A878;box-shadow:0 0 0 4px rgba(135,168,120,0.30);",
+    ok: "background:#FFB088;box-shadow:0 0 0 4px rgba(255,176,136,0.25);",
+    low: "background:#C2522B;box-shadow:0 0 0 3px rgba(194,82,43,0.30);opacity:0.85;",
   };
   return new L.DivIcon({
     className: "cg-hospital-marker",
-    html: `<div style="width:12px;height:12px;border-radius:999px;${styles[tier]}"></div>`,
+    html: `<div style="width:12px;height:12px;border-radius:999px;${styles[level]}"></div>`,
     iconSize: [12, 12],
     iconAnchor: [6, 6],
   });
@@ -43,18 +53,21 @@ function FitToHospitals({ hospitals }: { hospitals: Hospital[] }) {
   return null;
 }
 
-export default function HospitalMap({ hospitals }: { hospitals: Hospital[] }) {
-  const ranked = useMemo(() => {
-    let bestUsed = false;
-    return hospitals.map((h) => {
-      const isFirst = !h.demoted && !bestUsed;
-      if (isFirst) bestUsed = true;
-      return { hospital: h, tier: tierFor(h, isFirst) };
-    });
-  }, [hospitals]);
+const legendItems: { level: Availability; label: string; color: string }[] = [
+  { level: "high", label: "High", color: "#87A878" },
+  { level: "ok", label: "OK", color: "#FFB088" },
+  { level: "low", label: "Low", color: "#C2522B" },
+];
 
-  const cityLabel =
-    hospitals[0]?.name ? `${hospitals.length} hospitals` : "Awaiting query";
+export default function HospitalMap({ hospitals }: { hospitals: Hospital[] }) {
+  const tagged = useMemo(
+    () => hospitals.map((h) => ({ hospital: h, level: availabilityFor(h) })),
+    [hospitals],
+  );
+
+  const cityLabel = hospitals[0]?.name
+    ? `${hospitals.length} hospitals · availability`
+    : "Awaiting query";
 
   return (
     <div className="relative h-full min-h-[260px] overflow-hidden rounded-cg-card border border-white/[0.05] bg-[#15151A] backdrop-blur-cg-glass">
@@ -71,10 +84,10 @@ export default function HospitalMap({ hospitals }: { hospitals: Hospital[] }) {
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
         />
         <FitToHospitals hospitals={hospitals} />
-        {ranked.map(({ hospital, tier }) => (
-          <Marker key={hospital.id} position={[hospital.lat, hospital.lng]} icon={makeIcon(tier)}>
+        {tagged.map(({ hospital, level }) => (
+          <Marker key={hospital.id} position={[hospital.lat, hospital.lng]} icon={makeIcon(level)}>
             <Tooltip direction="top" offset={[0, -8]} opacity={1} permanent={false}>
-              {hospital.name}
+              {hospital.name} · availability {level}
             </Tooltip>
           </Marker>
         ))}
@@ -82,6 +95,19 @@ export default function HospitalMap({ hospitals }: { hospitals: Hospital[] }) {
       <div className="pointer-events-none absolute left-4 top-4 text-[10px] font-semibold uppercase tracking-cg-overline text-cg-mist1">
         {cityLabel}
       </div>
+      {hospitals.length > 0 ? (
+        <div className="pointer-events-none absolute bottom-3 left-3 flex items-center gap-2 rounded-full border border-white/[0.08] bg-[rgba(20,20,21,0.85)] px-2.5 py-1 text-[10px] text-cg-mist1 backdrop-blur-cg-glass">
+          {legendItems.map((item) => (
+            <span key={item.level} className="inline-flex items-center gap-1">
+              <span
+                className="h-2 w-2 rounded-full"
+                style={{ background: item.color }}
+              />
+              {item.label}
+            </span>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -6,12 +6,35 @@ import { Circle, MapContainer, Marker, TileLayer, Tooltip, useMap } from "react-
 import { getNGODashboardData } from "../lib/api";
 import type { NGODashboardData, NGOPin } from "../lib/types";
 
-const ngoMarker = new L.DivIcon({
-  className: "ngo-pin-marker",
-  html: "<div style='width:12px;height:12px;border-radius:999px;background:#FFB088;border:2px solid #2A1709;box-shadow:0 0 0 3px rgba(255,176,136,0.25);'></div>",
-  iconSize: [12, 12],
-  iconAnchor: [6, 6],
-});
+// Specialty → warm-palette dot color. Matched pins (or all pins on "All")
+// render in their full specialty hue; unmatched pins (when a filter is active)
+// fade to charcoal with reduced opacity, so the match relationship reads at
+// a glance without yanking pins off the map.
+const specialtyDotColor: Record<string, string> = {
+  Trauma: "#FFB088",
+  Cardiac: "#E87B43",
+  Neuro: "#C8E4D0",
+  Pediatric: "#87A878",
+};
+const fallbackDotColor = "#9A9690";
+
+function buildPinIcon(specialty: string, matched: boolean): L.DivIcon {
+  const color = specialtyDotColor[specialty] ?? fallbackDotColor;
+  if (matched) {
+    return new L.DivIcon({
+      className: "ngo-pin-marker",
+      html: `<div style="width:14px;height:14px;border-radius:999px;background:${color};border:2px solid #2A1709;box-shadow:0 0 0 4px ${color}55;"></div>`,
+      iconSize: [14, 14],
+      iconAnchor: [7, 7],
+    });
+  }
+  return new L.DivIcon({
+    className: "ngo-pin-marker ngo-pin-faded",
+    html: `<div style="width:9px;height:9px;border-radius:999px;background:#5A5550;border:1px solid #2A1709;opacity:0.55;"></div>`,
+    iconSize: [9, 9],
+    iconAnchor: [4, 4],
+  });
+}
 
 // Fits the map viewport to the visible pins on the FIRST non-empty load only.
 // We deliberately do NOT re-fit on subsequent filter changes — the user has
@@ -245,26 +268,42 @@ export default function NGODashboard() {
               url="https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png"
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
             />
-            <FitToHospitals pins={filteredPins} />
-            {filteredPins.map((pin) => (
-              <Marker key={pin.id} position={[pin.lat, pin.lng]} icon={ngoMarker}>
-                <Tooltip>
-                  PIN {pin.pin} - {pin.specialty}
-                </Tooltip>
-              </Marker>
-            ))}
-            {filteredPins.map((pin) => (
-              <Circle
-                key={`${pin.id}-radius`}
-                center={[pin.lat, pin.lng]}
-                radius={pin.severity === "high" ? 52000 : pin.severity === "medium" ? 38000 : 25000}
-                pathOptions={{
-                  color: severityCircleColor(pin.severity),
-                  fillOpacity: 0.10,
-                  weight: 1,
-                }}
-              />
-            ))}
+            <FitToHospitals pins={data?.underservedPins ?? []} />
+            {(data?.underservedPins ?? []).map((pin) => {
+              const matched = specialty === "All" || pin.specialty === specialty;
+              return (
+                <Marker
+                  key={pin.id}
+                  position={[pin.lat, pin.lng]}
+                  icon={buildPinIcon(pin.specialty, matched)}
+                  // Faded pins shouldn't steal clicks while a filter is active —
+                  // user is explicitly hunting matched pins; greyed dots are
+                  // context, not interactive targets.
+                  interactive={matched}
+                >
+                  <Tooltip>
+                    PIN {pin.pin} · {pin.specialty}
+                  </Tooltip>
+                </Marker>
+              );
+            })}
+            {/* Severity radius rings — only on matched pins so the fade reads
+                cleanly. The ring colour stays severity-driven so high-severity
+                gaps still pop visually inside the matched set. */}
+            {(data?.underservedPins ?? [])
+              .filter((pin) => specialty === "All" || pin.specialty === specialty)
+              .map((pin) => (
+                <Circle
+                  key={`${pin.id}-radius`}
+                  center={[pin.lat, pin.lng]}
+                  radius={pin.severity === "high" ? 52000 : pin.severity === "medium" ? 38000 : 25000}
+                  pathOptions={{
+                    color: severityCircleColor(pin.severity),
+                    fillOpacity: 0.10,
+                    weight: 1,
+                  }}
+                />
+              ))}
           </MapContainer>
         </div>
       </div>
