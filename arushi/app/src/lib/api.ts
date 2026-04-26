@@ -54,6 +54,7 @@ let _degraded = false;
 // Mock fallback would mask a 401/403 and lose hours of debug time at the demo.
 let _authError = false;
 export const isDegraded = () => _degraded || !HAS_REAL_BACKEND;
+export const isBackendConfigured = () => HAS_REAL_BACKEND;
 export const hasAuthError = () => _authError;
 
 // crypto.randomUUID is available in modern browsers + Node 19+. The fallback
@@ -128,11 +129,29 @@ export async function recommend(request: RecommendRequest): Promise<RecommendRes
 
 export async function reserve(request: ReserveRequest): Promise<ReserveResponse> {
   if (HAS_REAL_BACKEND) {
-    const patient_id = newPatientId(request.hospitalId);
-    // Let real failures propagate — UI shows the rollback animation + banner.
-    // Lying about success here would let the stage demo pass while production
-    // saga rolled back, which is much worse than an honest red tile.
-    const out = await canonicalApi.book(request.hospitalId, patient_id);
+    let out;
+    try {
+      const patient_id = newPatientId(request.hospitalId);
+      // Let real infrastructure failures propagate — UI shows the rollback
+      // animation + banner. Auth/config errors are a known demo setup failure,
+      // so convert them into a visible rollback reason instead of generic copy.
+      out = await canonicalApi.book(request.hospitalId, patient_id);
+    } catch (err) {
+      if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+        _degraded = true;
+        _authError = true;
+        return {
+          success: false,
+          referenceId: null,
+          status: "REJECTED",
+          reason: "Missing or invalid demo key. Set VITE_DEMO_KEY to match the backend DEMO_KEY.",
+          commit_error: null,
+          transaction_id: null,
+          errorReason: "Missing or invalid demo key. Set VITE_DEMO_KEY to match the backend DEMO_KEY.",
+        };
+      }
+      throw err;
+    }
     _degraded = false;
     _authError = false;
     const committed = out.status === "COMMITTED";

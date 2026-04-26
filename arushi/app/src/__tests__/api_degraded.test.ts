@@ -66,6 +66,36 @@ describe("api degraded state", () => {
     expect(isDegraded()).toBe(false);
   });
 
+  test("unset public URL disables real backend so local demo uses mocks", async () => {
+    vi.resetModules();
+    vi.stubEnv("VITE_PUBLIC_URL", "");
+
+    const { HAS_REAL_BACKEND } = await import("../api");
+    const { isDegraded, reserve } = await import("../lib/api");
+
+    expect(HAS_REAL_BACKEND).toBe(false);
+    await expect(reserve({ hospitalId: "HOSP_TEST" })).resolves.toMatchObject({
+      success: true,
+    });
+    expect(isDegraded()).toBe(true);
+  });
+
+  test("reserve surfaces missing demo key instead of throwing generic failure", async () => {
+    vi.resetModules();
+    vi.stubEnv("VITE_PUBLIC_URL", "https://api.example.test");
+    vi.stubEnv("VITE_DEMO_KEY", "");
+
+    const { hasAuthError, reserve } = await import("../lib/api");
+
+    await expect(reserve({ hospitalId: "HOSP_TEST" })).resolves.toMatchObject({
+      success: false,
+      status: "REJECTED",
+      reason: expect.stringMatching(/demo key/i),
+      referenceId: null,
+    });
+    expect(hasAuthError()).toBe(true);
+  });
+
   test("live railway recommend shape adapts without entering degraded mode", async () => {
     vi.stubGlobal(
       "fetch",

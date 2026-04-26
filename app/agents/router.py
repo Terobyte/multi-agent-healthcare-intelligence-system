@@ -38,7 +38,7 @@ logger = logging.getLogger("router")
 # Configuration
 # ---------------------------------------------------------------------------
 
-_TOP_N_DEFAULT = 5
+_TOP_N_DEFAULT = 12
 
 # Hospitals with a calibrated trust score below this floor are excluded from
 # the ranked list.  Keeps synthetic / post-arc-penalised rows (e.g. facility
@@ -419,7 +419,7 @@ def route(
 
     Args:
         inp:      RouterInput with specialty, city, and bed predictions list.
-        top_n:    Maximum ranked results to return (default 5).
+        top_n:    Maximum ranked results to return (default 12).
         trace_id: Caller-supplied trace correlation ID; generated when absent.
 
     Returns:

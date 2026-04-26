@@ -161,9 +161,10 @@ def test_demo_allowlist_top_hospital_and_floor_filter():
         f"got {ranked_ids[0]}"
     )
 
-    # At most 5 hospitals returned from the 6-row input (8888 filtered)
-    assert len(ranked_ids) <= 5, (
-        f"expected at most 5 ranked hospitals, got {len(ranked_ids)}: {ranked_ids}"
+    # Default API page is capped, but should include every eligible row from
+    # this small fixture (8888 filtered by trust floor).
+    assert len(ranked_ids) <= 12, (
+        f"expected at most 12 ranked hospitals, got {len(ranked_ids)}: {ranked_ids}"
     )
 
 

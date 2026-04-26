@@ -11,8 +11,7 @@ import type {
   TriageOutput,
 } from "./lib/types";
 
-const DEFAULT_API_BASE = "https://aarogyanet-api-production.up.railway.app";
-const BASE = (import.meta.env.VITE_PUBLIC_URL || DEFAULT_API_BASE).replace(/\/+$/, "");
+const BASE = (import.meta.env.VITE_PUBLIC_URL || "").replace(/\/+$/, "");
 const DEMO_KEY = import.meta.env.VITE_DEMO_KEY ?? "";
 
 export const API_BASE = BASE;
@@ -62,7 +61,15 @@ async function call<T>(
     );
   }
   const headers: Record<string, string> = { "content-type": "application/json" };
-  if (opts.mutating && DEMO_KEY) headers["X-Demo-Key"] = DEMO_KEY;
+  if (opts.mutating) {
+    if (!DEMO_KEY) {
+      throw new ApiError(
+        "missing VITE_DEMO_KEY for mutating request",
+        401,
+      );
+    }
+    headers["X-Demo-Key"] = DEMO_KEY;
+  }
 
   // Compose caller-provided AbortSignal with our timeout — abort on whichever
   // fires first. Cleared in `finally` so the timer can't fire on a finished call.

@@ -6,7 +6,7 @@ import HospitalCard from "../components/HospitalCard";
 import HospitalMap from "../components/HospitalMap";
 import ReasoningPanel, { type RenderedReasoningRow } from "../components/ReasoningPanel";
 import SourceModal from "../components/SourceModal";
-import { isDegraded, recommend, reserve, streamReasoning } from "../lib/api";
+import { isBackendConfigured, isDegraded, recommend, reserve, streamReasoning } from "../lib/api";
 import type { Hospital, TrustEvidence } from "../lib/types";
 
 const agentById: Record<string, RenderedReasoningRow["agent"]> = {
@@ -208,7 +208,9 @@ export default function PatientFlow() {
           <ChatInput onSend={runRecommendation} loading={isLoading} />
           {degraded ? (
             <div className="rounded-cg-tile border border-[rgba(255,176,136,0.30)] bg-[rgba(255,176,136,0.10)] px-4 py-2 text-[12px] text-cg-peach">
-              Backend unreachable — showing offline demo data.
+              {isBackendConfigured()
+                ? "Backend unreachable — showing offline demo data."
+                : "Backend URL not configured — showing offline demo data."}
             </div>
           ) : null}
           {errorMessage ? (
