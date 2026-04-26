@@ -30,7 +30,7 @@ GROUP BY trust_source ORDER BY n DESC;
 Expected:
 | trust_source | n | avg_trust |
 |---|---|---|
-| rule-inferred | 9738 | 0.609 |
+| rule-inferred | 9738 | 0.607 |
 | models-disagree | 169 | 0.589 |
 | two-model-verified | 80 | 0.695 |
 | llm-verified | 13 | 0.648 |

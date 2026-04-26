@@ -45,7 +45,11 @@ scored AS (
       (CASE WHEN has_staff_presence = TRUE THEN 0.4 ELSE 0 END) +
       (CASE WHEN coalesce(social_count, 0) >= 1 THEN 0.3 ELSE 0 END)
     ) AS digital_credibility_score,
-    -- freshness: parse "Updated NN days ago" patterns from last_page_update_raw
+    -- freshness: parse human-readable "Updated NN days ago" patterns first,
+    -- then fall back to ISO datetime parsing if raw is yyyy-mm-dd format.
+    -- KNOWN: in current vf_hackathon dataset all values are ISO datetimes, so the
+    -- ISO branch dominates. The regex branches are kept for forward-compat with
+    -- other crawls. NULL/unparseable still falls to 0.5 default (neutral).
     CASE
       WHEN last_page_update_raw RLIKE '(?i)today|hour|minute' THEN 1.0
       WHEN last_page_update_raw RLIKE '(?i)([0-9]+) day' THEN
@@ -54,6 +58,14 @@ scored AS (
         greatest(0.0, 1.0 - try_cast(regexp_extract(last_page_update_raw, '([0-9]+)', 1) AS DOUBLE) / 12.0)
       WHEN last_page_update_raw RLIKE '(?i)([0-9]+) year' THEN
         greatest(0.0, 1.0 - try_cast(regexp_extract(last_page_update_raw, '([0-9]+)', 1) AS DOUBLE) * 0.5)
+      WHEN try_cast(last_page_update_raw AS TIMESTAMP) IS NOT NULL THEN
+        CASE
+          WHEN datediff(current_date(), try_cast(last_page_update_raw AS DATE)) <=  30 THEN 1.0
+          WHEN datediff(current_date(), try_cast(last_page_update_raw AS DATE)) <=  90 THEN 0.8
+          WHEN datediff(current_date(), try_cast(last_page_update_raw AS DATE)) <= 365 THEN 0.6
+          WHEN datediff(current_date(), try_cast(last_page_update_raw AS DATE)) <= 730 THEN 0.3
+          ELSE 0.1
+        END
       ELSE 0.5
     END AS freshness_score
   FROM base
