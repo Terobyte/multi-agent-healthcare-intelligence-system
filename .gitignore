@@ -1,9 +1,15 @@
 .DS_Store
 node_modules/
 .env
+.env.*
+!.env.example
 .env.local
 *.log
 .mcp.json
+
+# python cache
+__pycache__/
+*.pyc
 
 # large datasets — keep refs in research/, not raw blobs
 data/raw/
@@ -22,6 +28,10 @@ data/*.xlsx
 # private team profiles — never commit
 team.md
 team/
+
+# personal punch-lists — never commit
+/requirements*.md
+docs/PLAN-REMAINING*.md
 
 # owner work folders — ignored until we pick a direction (each member proposes; we converge)
 tero/

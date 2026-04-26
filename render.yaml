@@ -5,12 +5,17 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
+    autoDeployTrigger: commit
     envVars:
+      # ── Secrets ─────────────────────────────────────────────────────────────
+      # In Render Dashboard → Environment, set EACH of these as type "Secret"
+      # (not plain text) so the value is masked in the UI and audit logs.
       - key: DATABRICKS_HOST
-        sync: false          # set in Render dashboard / env-group
+        sync: false
       - key: DATABRICKS_TOKEN
         sync: false
       - key: DATABRICKS_WAREHOUSE_ID
         sync: false
+      # ── Non-secret defaults (plain Environment is fine) ─────────────────────
       - key: VS_ENDPOINT
-        value: mubarak_vs   # non-secret default; override in dashboard if needed
+        value: mubarak_vs   # override in dashboard if endpoint name changes
