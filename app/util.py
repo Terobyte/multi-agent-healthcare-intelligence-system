@@ -9,10 +9,26 @@ Never log or persist the raw patient_id or coordinates after this layer.
 import hashlib
 import os
 
-# PII_SALT must be set in production via Render Secret env. The dev fallback
-# guarantees the module imports in tests / local smokes but produces hashes
-# that are NOT safe for any data leaving a developer machine.
-_SALT = os.getenv("PII_SALT", "aarogyanet-dev-salt-do-not-use-in-prod")
+_DEV_SALT = "aarogyanet-dev-salt-do-not-use-in-prod"
+
+
+def _resolve_salt() -> str:
+    """Pick the salt at call time, not import time.
+
+    Fail-loud rule (bug #4): if PII_SALT is not set AND AAROGYANET_DEV is not
+    set, refuse to hash. This prevents the dev salt from silently shipping to
+    production where its predictability turns hashes into reversible mappings.
+    """
+    salt = os.getenv("PII_SALT")
+    if salt:
+        return salt
+    if os.getenv("AAROGYANET_DEV") == "1":
+        return _DEV_SALT
+    raise RuntimeError(
+        "PII_SALT is not set. Refusing to hash with the dev fallback salt. "
+        "Set PII_SALT in your environment, or AAROGYANET_DEV=1 to opt into the "
+        "insecure dev salt explicitly."
+    )
 
 
 def hash_patient_id(patient_id: str) -> str:
@@ -21,7 +37,7 @@ def hash_patient_id(patient_id: str) -> str:
     16 hex chars = 64 bits = ~10^19 keyspace; collision probability for a
     realistic patient population (10^7) is negligible.
     """
-    return "p_" + hashlib.sha256((_SALT + patient_id).encode()).hexdigest()[:16]
+    return "p_" + hashlib.sha256((_resolve_salt() + patient_id).encode()).hexdigest()[:16]
 
 
 def round_geo(lat: float, lon: float) -> tuple[float, float]:

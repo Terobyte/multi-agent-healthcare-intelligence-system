@@ -7,12 +7,28 @@ Delta has no cross-table ACID, so this is saga-style compensation. Per-table
 writes are themselves ACID via Delta. See scripts/databricks/07_atomic_booking.sql.
 """
 import logging
+import threading
 from uuid import uuid4
 
 from app.db import warehouse_query
 from app.util import hash_patient_id
 
 logger = logging.getLogger("booking")
+
+# bug #6: in-process serialization for concurrent requests on the same patient.
+# A real distributed lock (Redis/Delta unique constraint) is needed if the demo
+# scales beyond one Render container.
+_patient_locks: dict[str, threading.Lock] = {}
+_patient_locks_guard = threading.Lock()
+
+
+def _patient_lock(key: str) -> threading.Lock:
+    with _patient_locks_guard:
+        lock = _patient_locks.get(key)
+        if lock is None:
+            lock = threading.Lock()
+            _patient_locks[key] = lock
+        return lock
 
 # (table_name, pk_column, initial_status_per_DDL_enum)
 RESOURCE_TABLES = [
@@ -37,6 +53,14 @@ if set(RESOURCE_TABLE_BY_SHORT.values()) != ALLOWED_TABLES:
 
 
 def book_atomic(facility_id: str, patient_id: str, factors_required: dict) -> dict:
+    # bug #3: hash patient_id at entry; raw value never reaches Delta or logs.
+    hashed_pid = hash_patient_id(patient_id)
+    # bug #6: serialize concurrent requests for the same patient at process level.
+    with _patient_lock(hashed_pid):
+        return _book_atomic_inner(facility_id, hashed_pid, factors_required)
+
+
+def _book_atomic_inner(facility_id: str, hashed_pid: str, factors_required: dict) -> dict:
     # 1. facility existence — never insert a txn for a phantom facility
     rows = warehouse_query(
         "SELECT facility_id FROM workspace.default.gold_trust_final WHERE facility_id=?",
@@ -54,13 +78,13 @@ def book_atomic(facility_id: str, patient_id: str, factors_required: dict) -> di
     active = warehouse_query(
         "SELECT transaction_id FROM workspace.default.txn_atomic "
         "WHERE patient_id=? AND status IN ('RESERVED','COMMITTED') LIMIT 1",
-        [patient_id],
+        [hashed_pid],
     )
     if active:
         return {
             "transaction_id": active[0][0], "status": "REJECTED",
             "resources": {}, "facility_id": facility_id,
-            "reason": f"patient {patient_id} has active txn {active[0][0]}",
+            "reason": f"patient already has active txn {active[0][0]}",
             "commit_error": None,
         }
 
@@ -71,11 +95,11 @@ def book_atomic(facility_id: str, patient_id: str, factors_required: dict) -> di
             "INSERT INTO workspace.default.txn_atomic "
             "(transaction_id, patient_id, facility_id, status, created_ts, updated_ts) "
             "VALUES (?, ?, ?, 'RESERVED', current_timestamp(), current_timestamp())",
-            [txn_id, patient_id, facility_id],
+            [txn_id, hashed_pid, facility_id],
         )
     except Exception as e:
-        # Don't leak warehouse hostname / table path / internal stack into the API response.
-        logger.exception("parent_insert_failed txn=%s patient=%s", txn_id, patient_id)
+        # patient_id in the log is hashed (bug #3 + #20).
+        logger.exception("parent_insert_failed txn=%s patient=%s", txn_id, hashed_pid)
         return {
             "transaction_id": None, "status": "REJECTED",
             "resources": {}, "facility_id": facility_id,
@@ -99,7 +123,7 @@ def book_atomic(facility_id: str, patient_id: str, factors_required: dict) -> di
                 f"WHEN NOT MATCHED THEN INSERT "
                 f"({pk_col}, transaction_id, facility_id, status, patient_id, created_ts, updated_ts) "
                 f"VALUES (?, s.transaction_id, s.facility_id, s.status, s.patient_id, current_timestamp(), current_timestamp())",
-                [txn_id, facility_id, init_status, patient_id, str(uuid4())],
+                [txn_id, facility_id, init_status, hashed_pid, str(uuid4())],
             )
             results[short] = "OK"
         except Exception as e:

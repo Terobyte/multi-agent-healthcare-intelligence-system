@@ -6,6 +6,13 @@ import app.agents.booking as booking_module
 from app.agents.booking import book_atomic
 
 
+@pytest.fixture(autouse=True)
+def _allow_dev_salt(monkeypatch):
+    # bug #4: hash_patient_id refuses to run without explicit salt or DEV opt-in
+    monkeypatch.setenv("AAROGYANET_DEV", "1")
+    monkeypatch.delenv("PII_SALT", raising=False)
+
+
 # Live-warehouse tests — opt-in via env so unit-test default doesn't dirty Delta.
 LIVE = os.getenv("BOOKING_LIVE_TESTS") == "1"
 

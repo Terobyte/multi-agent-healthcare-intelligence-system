@@ -10,6 +10,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 
+@pytest.fixture(autouse=True)
+def _allow_dev_salt(monkeypatch):
+    monkeypatch.setenv("AAROGYANET_DEV", "1")
+    monkeypatch.delenv("PII_SALT", raising=False)
+
+
 @pytest.fixture
 def client_with_key(monkeypatch):
     monkeypatch.setenv("DEMO_KEY", "test-secret")

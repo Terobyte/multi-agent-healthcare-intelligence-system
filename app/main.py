@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import time
 import concurrent.futures
 from datetime import datetime, timezone
@@ -21,11 +22,70 @@ from app.schemas import BookingOutput, ReasoningPanelEvent
 from app.settings import settings
 import mlflow.deployments
 
-# Forward our app loggers ("booking", "app.*") to stderr so Render's log tail
-# captures saga compensation errors. basicConfig is a no-op when the root
-# logger already has handlers (e.g. uvicorn --log-config); attach an explicit
-# handler to our named loggers so saga compensation logs survive both modes.
-_log_formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
+# bug #20: scrub Bearer/dapi token shapes from log records and formatted output.
+_TOKEN_PATTERNS = [
+    re.compile(r"Bearer\s+dapi[a-zA-Z0-9._-]+", re.IGNORECASE),
+    re.compile(r"\bdapi[a-zA-Z0-9._-]{8,}", re.IGNORECASE),
+    re.compile(r"Authorization:\s*\S+", re.IGNORECASE),
+]
+
+
+def _scrub(text: str) -> str:
+    for pat in _TOKEN_PATTERNS:
+        text = pat.sub("[REDACTED]", text)
+    return text
+
+
+class _ScrubbingFormatter(logging.Formatter):
+    """Second-pass scrub on the fully-rendered string, including the formatted
+    traceback (source lines come from disk — no filter can reach them)."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        return _scrub(super().format(record))
+
+    def formatException(self, ei) -> str:
+        return _scrub(super().formatException(ei))
+
+
+# bug #20: install a global LogRecord factory that scrubs at creation time.
+# Filters run only on the originating logger; a global factory ensures EVERY
+# handler (caplog, test ListHandler, third-party log shippers) sees clean data.
+# Idempotent across module reloads via the `_aarogyanet_scrub` marker attribute.
+_existing_factory = logging.getLogRecordFactory()
+if not getattr(_existing_factory, "_aarogyanet_scrub", False):
+    _orig_record_factory = _existing_factory
+
+    def _scrubbing_record_factory(*args, **kwargs):
+        record = _orig_record_factory(*args, **kwargs)
+        try:
+            record.msg = _scrub(record.getMessage())
+            record.args = ()
+        except Exception:
+            pass
+        if record.exc_info:
+            etype, evalue, _tb = record.exc_info
+            if evalue is not None:
+                original_args = "".join(repr(a) for a in evalue.args)
+                # If the exception text carried a token, drop the traceback —
+                # Python's traceback formatter reads source from disk and would
+                # re-leak the raise statement's literal arguments.
+                if original_args != _scrub(original_args):
+                    try:
+                        clean = (etype or RuntimeError)(*[_scrub(str(a)) for a in evalue.args])
+                    except Exception:
+                        clean = RuntimeError(_scrub(str(evalue)))
+                    record.exc_info = (type(clean), clean, None)
+                else:
+                    try:
+                        evalue.args = tuple(_scrub(str(a)) for a in evalue.args)
+                    except Exception:
+                        pass
+        return record
+
+    _scrubbing_record_factory._aarogyanet_scrub = True  # type: ignore[attr-defined]
+    logging.setLogRecordFactory(_scrubbing_record_factory)
+
+_log_formatter = _ScrubbingFormatter("%(asctime)s %(levelname)s %(name)s %(message)s")
 _log_handler = logging.StreamHandler()
 _log_handler.setFormatter(_log_formatter)
 for _name in ("app", "booking"):
@@ -47,6 +107,7 @@ app.add_middleware(
 # Demo-stage protection for mutating endpoints. Public Render URL otherwise lets
 # any audience member POST /book and dirty the trust calibration mid-pitch.
 DEMO_KEY = os.getenv("DEMO_KEY", "")
+DEV_MODE = os.getenv("AAROGYANET_DEV") == "1"
 limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
 # Default 500 → 429 with a usable Retry-After header.
@@ -54,8 +115,17 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
 def require_demo_key(x_demo_key: str = Header(default="")):
-    # Empty DEMO_KEY → auth disabled (local dev). In Render env, set the secret.
-    if DEMO_KEY and x_demo_key != DEMO_KEY:
+    # bug #1: fail-closed by default. Without DEMO_KEY env, the only way to get
+    # unauthenticated access is to explicitly set AAROGYANET_DEV=1. Prevents an
+    # env-var typo on Render from silently opening /book to the world.
+    if not DEMO_KEY:
+        if DEV_MODE:
+            return  # explicit dev opt-in
+        raise HTTPException(
+            status_code=401,
+            detail="DEMO_KEY not configured (set DEMO_KEY env, or AAROGYANET_DEV=1 for local)",
+        )
+    if x_demo_key != DEMO_KEY:
         raise HTTPException(status_code=401, detail="invalid X-Demo-Key")
 
 
@@ -88,17 +158,13 @@ def reset_fm_client() -> None:
 
 def _fm_endpoint_count(ttl_sec: int = 60, timeout: float = 8.0) -> Optional[int]:
     now = time.time()
-    # cache every attempt within TTL — successful or not. Render probes /health
-    # every 10-30s; without stamping ts on failure too, an FM-API outage turns
-    # every probe into a fresh upstream call (retry storm).
     if (now - _ep_cache["ts"]) < ttl_sec:
         return _ep_cache["n"]
     try:
         future = _fm_executor.submit(lambda: len(fm_client().list_endpoints()))
         _ep_cache["n"] = future.result(timeout=timeout)
     except Exception:
-        # Throttled by ttl_sec — no log storm even during a sustained outage.
-        # Keep last-known endpoint count (None on cold-start / auth failure).
+        # Throttled by ttl_sec — no log storm even during sustained outage.
         logger.warning("fm_probe_failed last_known=%s", _ep_cache["n"], exc_info=True)
     _ep_cache["ts"] = now
     return _ep_cache["n"]
@@ -107,8 +173,6 @@ def _fm_endpoint_count(ttl_sec: int = 60, timeout: float = 8.0) -> Optional[int]
 @app.get("/health")
 def health():
     n = _fm_endpoint_count()
-    # n == 0 is a misconfig (FM API reachable but no endpoints provisioned) —
-    # report degraded so a workspace with empty endpoint list doesn't show green.
     healthy = n is not None and n > 0
     return {
         "status": "ok" if healthy else "degraded",
@@ -128,8 +192,7 @@ class BookRequest(BaseModel):
 def book(request: Request, req: BookRequest):
     try:
         # Validate inside the try so a malformed dict from book_atomic raises
-        # ValidationError HERE, not later in FastAPI's response serializer
-        # (where this except wouldn't see it).
+        # ValidationError HERE, not later in FastAPI's response serializer.
         return BookingOutput(**book_atomic(req.facility_id, req.patient_id, {}))
     except Exception:
         logger.exception("book_endpoint_unhandled facility=%s patient=%s", req.facility_id, req.patient_id)
@@ -154,34 +217,23 @@ def _evt(agent: str, token: str, trace_id: str) -> str:
 
 
 @app.get("/sse")
-async def sse(session_id: str):
-    """Server-Sent Events stream of agent reasoning tokens.
-
-    Event vocabulary (contract for ReasoningPanel.tsx):
-      triage | extractor | validator | router | transfer | stream_tick | ping | done | error
-    Terminal: `event: done` with the final session payload.
-    Heartbeat: an initial `event: ping` is always emitted; an inter-tick ping
-    fires only when an agent step takes >15s (placeholder cadence completes in
-    ~1s and never triggers). Once real agent calls are wired in, swap to a
-    parallel asyncio.create_task that pings on a wall-clock interval.
+async def sse(session_id: str, request: Request):
+    """SSE stream of agent reasoning. Event vocab: triage|extractor|validator|
+    router|transfer|stream_tick|ping|done|error. Bug #13: aborts on disconnect.
     """
     trace_id = str(uuid4())
 
     async def gen():
-        # Initial ping confirms liveness to the client before the first agent
-        # tick — and gives the proxy a byte to flush so it doesn't buffer the
-        # response. Without it, an exception before the first yield closes the
-        # connection silently with no body.
         yield "event: ping\ndata: {}\n\n"
         last_ping = time.time()
         try:
             for agent in AGENT_ORDER:
+                if await request.is_disconnected():
+                    logger.info("sse_client_disconnected trace=%s at=%s", trace_id, agent)
+                    return
                 yield _evt(agent, f"{agent} starting", trace_id)
-                await asyncio.sleep(0.2)  # placeholder cadence; real agents stream tokens
+                await asyncio.sleep(0.2)
                 yield _evt(agent, f"{agent} done", trace_id)
-                # Render/Cloudflare idle-close streaming connections after
-                # ~30-60s. Emit a ping if more than 15s elapsed since the last
-                # frame so long-running real agents don't drop the stream.
                 if time.time() - last_ping > 15:
                     yield "event: ping\ndata: {}\n\n"
                     last_ping = time.time()
@@ -204,11 +256,15 @@ _DEMO_TRANSCRIPT = Path(__file__).parent / "agents" / "_demo_transcript.sse"
 
 @app.get("/sse_demo")
 async def sse_demo(session_id: str):
-    if not _DEMO_TRANSCRIPT.exists():
-        raise HTTPException(status_code=503, detail="transcript not recorded")
-    text = _DEMO_TRANSCRIPT.read_text()
-
+    """Bug #14: always responds as text/event-stream — missing transcript
+    becomes an SSE error frame, not an HTTPException 503."""
     async def gen():
+        if not _DEMO_TRANSCRIPT.exists():
+            logger.warning("sse_demo_transcript_missing path=%s", _DEMO_TRANSCRIPT)
+            yield 'event: error\ndata: {"code":"transcript_not_recorded","message":"demo transcript missing"}\n\n'
+            yield f'event: done\ndata: {{"session_id":"{session_id}"}}\n\n'
+            return
+        text = _DEMO_TRANSCRIPT.read_text()
         saw_done = False
         for chunk in text.split("\n\n"):
             chunk = chunk.strip()
@@ -218,9 +274,6 @@ async def sse_demo(session_id: str):
                 saw_done = True
             yield chunk + "\n\n"
             await asyncio.sleep(0.25)
-        # Frontend EventSource hangs forever waiting for `done`. If the canned
-        # transcript is malformed (no done frame), surface a synthetic one so
-        # the panel cleanly closes instead of looking frozen.
         if not saw_done:
             logger.warning("sse_demo_transcript_missing_done session=%s", session_id)
             yield 'event: error\ndata: {"code":"demo_transcript_invalid","message":"no done frame"}\n\n'

@@ -1,4 +1,12 @@
+import pytest
+
 from app.util import hash_patient_id, round_geo
+
+
+@pytest.fixture(autouse=True)
+def _allow_dev_salt(monkeypatch):
+    monkeypatch.setenv("AAROGYANET_DEV", "1")
+    monkeypatch.delenv("PII_SALT", raising=False)
 
 
 def test_hash_patient_id_is_deterministic():

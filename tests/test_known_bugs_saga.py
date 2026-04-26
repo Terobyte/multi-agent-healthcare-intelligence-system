@@ -22,6 +22,13 @@ import pytest
 from fastapi.testclient import TestClient
 
 
+@pytest.fixture(autouse=True)
+def _allow_dev_salt(monkeypatch):
+    # Most tests don't care about PII_SALT. Bug #1 and #4 explicitly override
+    # this within the test body via monkeypatch.delenv.
+    monkeypatch.setenv("AAROGYANET_DEV", "1")
+
+
 # --------------------------------------------------------------------------- #
 # BUG #1 — DEMO_KEY auth open by default                                      #
 # --------------------------------------------------------------------------- #
@@ -30,6 +37,7 @@ from fastapi.testclient import TestClient
 # the world. Production must fail closed.
 def test_bug1_demo_key_unset_must_reject_unauthenticated_post(monkeypatch):
     monkeypatch.delenv("DEMO_KEY", raising=False)
+    monkeypatch.delenv("AAROGYANET_DEV", raising=False)  # production-like
     import app.main as main_module
     importlib.reload(main_module)
 
