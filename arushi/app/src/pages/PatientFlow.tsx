@@ -144,10 +144,6 @@ export default function PatientFlow() {
         setBookingState("success");
         bookingTimersRef.current.push(
           window.setTimeout(() => {
-            if (isMountedRef.current && myReq === reserveSeqRef.current)
-              setBookingState("rollback");
-          }, 1800),
-          window.setTimeout(() => {
             if (isMountedRef.current && myReq === reserveSeqRef.current) setBookingState("idle");
           }, 2800),
         );
