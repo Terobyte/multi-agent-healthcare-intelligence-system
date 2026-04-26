@@ -1,13 +1,18 @@
+import asyncio
+import json
 import logging
 import time
 import concurrent.futures
+from datetime import datetime, timezone
 from functools import lru_cache
 from typing import Optional
+from uuid import uuid4
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from app.agents.booking import book_atomic
-from app.schemas import BookingOutput
+from app.schemas import BookingOutput, ReasoningPanelEvent
 from app.settings import settings
 import mlflow.deployments
 
@@ -106,3 +111,45 @@ def book(req: BookRequest):
             resources={}, facility_id=req.facility_id,
             reason="warehouse unavailable",
         )
+
+
+# Order matches the reasoning-panel pipeline. Real agents (Mubarak's wiring)
+# will replace these placeholder ticks with token-by-token model output.
+AGENT_ORDER = ["triage", "extractor", "validator", "router", "transfer"]
+
+
+def _evt(agent: str, token: str, trace_id: str) -> str:
+    payload = ReasoningPanelEvent(
+        agent=agent, token=token, trace_id=trace_id,
+        ts=datetime.now(timezone.utc),
+    ).model_dump(mode="json")
+    return f"event: {agent}\ndata: {json.dumps(payload)}\n\n"
+
+
+@app.get("/sse")
+async def sse(session_id: str):
+    """Server-Sent Events stream of agent reasoning tokens.
+
+    Event vocabulary (contract for ReasoningPanel.tsx):
+      triage | extractor | validator | router | transfer | stream_tick | ping | done | error
+    Terminal: `event: done` with the final session payload.
+    Heartbeat: `event: ping` every 15s so reverse proxies don't idle-close.
+    """
+    trace_id = str(uuid4())
+
+    async def gen():
+        try:
+            for agent in AGENT_ORDER:
+                yield _evt(agent, f"{agent} starting", trace_id)
+                await asyncio.sleep(0.2)  # placeholder cadence; real agents stream tokens
+                yield _evt(agent, f"{agent} done", trace_id)
+            yield f"event: done\ndata: {json.dumps({'session_id': session_id, 'trace_id': trace_id})}\n\n"
+        except Exception as e:
+            logger.exception("sse_failed trace=%s", trace_id)
+            yield f"event: error\ndata: {json.dumps({'code':'sse_error','message':str(e)[:200]})}\n\n"
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
+    )
