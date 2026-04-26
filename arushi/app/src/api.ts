@@ -6,6 +6,7 @@ import type {
   BookingOutput,
   CanonicalRecommendResponse,
   HealthResponse,
+  NGODashboardData,
   OutcomeFeedback,
   TriageOutput,
 } from "./lib/types";
@@ -126,6 +127,8 @@ export const api = {
       fb,
       { mutating: true, signal },
     ),
+  ngoData: (signal?: AbortSignal) =>
+    call<NGODashboardData>("GET", "/ngo-data", undefined, { signal }),
 };
 
 // SSE URLs — EventSource cannot send custom headers, so /sse stays open

@@ -95,7 +95,11 @@ export async function recommend(request: RecommendRequest): Promise<RecommendRes
         console.error("[api] /recommend returned data adapter could not parse:", adaptErr);
         throw new Error("backend returned invalid hospital data");
       }
-      return { hospitals };
+      return {
+        hospitals,
+        validator_status: resp.validator_status,
+        agreement: resp.agreement,
+      };
     } catch (err) {
       // 401/403 → auth misconfig. Falling back to mocks would silently hide
       // the broken X-Demo-Key during the demo. Rethrow so the boundary catches it.
@@ -180,6 +184,23 @@ export async function getDoctorCopilotData(): Promise<DoctorCopilotData> {
 }
 
 export async function getNGODashboardData(): Promise<NGODashboardData> {
+  if (HAS_REAL_BACKEND) {
+    try {
+      const data = await canonicalApi.ngoData();
+      _degraded = false;
+      return data;
+    } catch (err) {
+      if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+        _authError = true;
+        _degraded = true;
+        throw err;
+      }
+      _degraded = true;
+      // eslint-disable-next-line no-console
+      console.warn("[api] /ngo-data failed, falling back to mocks:", err);
+    }
+  }
+  _degraded = true;
   await delay(260);
   return (await import("../../mocks/ngo-dashboard.json")).default as NGODashboardData;
 }
