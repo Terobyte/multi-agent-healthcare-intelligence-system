@@ -1,0 +1,162 @@
+{
+  "specialties": ["Trauma", "Cardiac", "Neuro", "Pediatric"],
+  "underservedPins": [
+    {
+      "id": "pin-560001",
+      "pin": "560001",
+      "specialty": "Trauma",
+      "severity": "high",
+      "lat": 12.977,
+      "lng": 77.588,
+      "populationGap": 42000
+    },
+    {
+      "id": "pin-110001",
+      "pin": "110001",
+      "specialty": "Neuro",
+      "severity": "medium",
+      "lat": 28.6328,
+      "lng": 77.2197,
+      "populationGap": 28500
+    },
+    {
+      "id": "pin-500001",
+      "pin": "500001",
+      "specialty": "Cardiac",
+      "severity": "high",
+      "lat": 17.403,
+      "lng": 78.476,
+      "populationGap": 37100
+    },
+    {
+      "id": "pin-700001",
+      "pin": "700001",
+      "specialty": "Pediatric",
+      "severity": "low",
+      "lat": 22.5726,
+      "lng": 88.3639,
+      "populationGap": 16400
+    },
+    {
+      "id": "pin-400001",
+      "pin": "400001",
+      "specialty": "Cardiac",
+      "severity": "medium",
+      "lat": 18.9388,
+      "lng": 72.8354,
+      "populationGap": 24100
+    },
+    {
+      "id": "pin-600001",
+      "pin": "600001",
+      "specialty": "Trauma",
+      "severity": "high",
+      "lat": 13.0839,
+      "lng": 80.2708,
+      "populationGap": 39800
+    },
+    {
+      "id": "pin-682001",
+      "pin": "682001",
+      "specialty": "Pediatric",
+      "severity": "medium",
+      "lat": 9.9816,
+      "lng": 76.2999,
+      "populationGap": 21700
+    },
+    {
+      "id": "pin-302001",
+      "pin": "302001",
+      "specialty": "Neuro",
+      "severity": "high",
+      "lat": 26.9124,
+      "lng": 75.7873,
+      "populationGap": 35300
+    },
+    {
+      "id": "pin-226001",
+      "pin": "226001",
+      "specialty": "Cardiac",
+      "severity": "high",
+      "lat": 26.8467,
+      "lng": 80.9462,
+      "populationGap": 36700
+    },
+    {
+      "id": "pin-751001",
+      "pin": "751001",
+      "specialty": "Trauma",
+      "severity": "medium",
+      "lat": 20.2961,
+      "lng": 85.8245,
+      "populationGap": 22800
+    },
+    {
+      "id": "pin-380001",
+      "pin": "380001",
+      "specialty": "Pediatric",
+      "severity": "low",
+      "lat": 23.0225,
+      "lng": 72.5714,
+      "populationGap": 14900
+    },
+    {
+      "id": "pin-800001",
+      "pin": "800001",
+      "specialty": "Neuro",
+      "severity": "medium",
+      "lat": 25.5941,
+      "lng": 85.1376,
+      "populationGap": 26100
+    },
+    {
+      "id": "pin-462001",
+      "pin": "462001",
+      "specialty": "Cardiac",
+      "severity": "low",
+      "lat": 23.2599,
+      "lng": 77.4126,
+      "populationGap": 17100
+    },
+    {
+      "id": "pin-641001",
+      "pin": "641001",
+      "specialty": "Trauma",
+      "severity": "medium",
+      "lat": 11.0168,
+      "lng": 76.9558,
+      "populationGap": 20500
+    },
+    {
+      "id": "pin-781001",
+      "pin": "781001",
+      "specialty": "Pediatric",
+      "severity": "high",
+      "lat": 26.1445,
+      "lng": 91.7362,
+      "populationGap": 33400
+    }
+  ],
+  "deadZones": [
+    {
+      "id": "dz-central",
+      "label": "Central corridor dead zone",
+      "description": "Ambulance access < 1 lane and specialist coverage below threshold."
+    },
+    {
+      "id": "dz-east",
+      "label": "Eastern dead zone",
+      "description": "Night-time specialist gap with unstable oxygen supply confidence."
+    },
+    {
+      "id": "dz-northwest",
+      "label": "North-west fracture corridor",
+      "description": "High trauma load with sub-threshold pediatric support in late evening shifts."
+    },
+    {
+      "id": "dz-coastal",
+      "label": "Coastal transfer blind spot",
+      "description": "Transfer latency spikes during rain bands; fallback specialty routing required."
+    }
+  ]
+}
