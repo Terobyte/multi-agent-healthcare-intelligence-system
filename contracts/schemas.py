@@ -81,6 +81,12 @@ class RankedHospital(BaseModel):
     non_medical_cost_inr: int
     lat: float
     lon: float
+    trust_calibrated: float = Field(default=0.0, ge=0.0, le=1.0)
+
+    @property
+    def facility_id(self) -> str:
+        """Alias for hospital_id — matches the Gold table column name."""
+        return self.hospital_id
 
 
 class RouterOutput(BaseModel):

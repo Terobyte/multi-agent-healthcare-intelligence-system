@@ -106,19 +106,24 @@ describe("bug_degraded_mode_banner_visible_when_api_falls_back_to_mocks", () => 
 
     // Assert: somewhere in the DOM there's an indicator that the data is not
     // live. Accept any of the obvious phrasings.
-    const body = document.body.textContent ?? "";
-    const hasIndicator =
-      /demo mode/i.test(body) ||
-      /sample data/i.test(body) ||
-      /backend unavailable/i.test(body) ||
-      /backend unreachable/i.test(body) ||
-      /offline demo/i.test(body) ||
-      /mock data/i.test(body);
+    await waitFor(
+      () => {
+        const body = document.body.textContent ?? "";
+        const hasIndicator =
+          /demo mode/i.test(body) ||
+          /sample data/i.test(body) ||
+          /backend unavailable/i.test(body) ||
+          /backend unreachable/i.test(body) ||
+          /offline demo/i.test(body) ||
+          /mock data/i.test(body);
 
-    expect(
-      hasIndicator,
-      `Expected a degraded-mode banner in the rendered page, got:\n${body.slice(0, 800)}`,
-    ).toBe(true);
+        expect(
+          hasIndicator,
+          `Expected a degraded-mode banner in the rendered page, got:\n${body.slice(0, 800)}`,
+        ).toBe(true);
+      },
+      { timeout: 3000 },
+    );
   });
 });
 

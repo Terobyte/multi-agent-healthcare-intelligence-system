@@ -16,6 +16,12 @@ interface HospitalCardProps {
     evidence?: TrustEvidence;
   }) => void;
   reserving?: boolean;
+  // "ok"       → validator ran for top-1 hospital AND both models agreed →
+  //              green "Verified live" pulse.
+  // "skipped"  → validator was not called (confidence ≥ 0.7) or models
+  //              disagreed → amber "Validation skipped" badge.
+  // undefined  → card is not the top-1 candidate; no validation badge shown.
+  validatorStatus?: "ok" | "skipped";
 }
 
 const trustPillByKind: Record<string, string> = {
@@ -30,6 +36,7 @@ function HospitalCard({
   onReserve,
   onTrustChipClick,
   reserving,
+  validatorStatus,
 }: HospitalCardProps) {
   // Tier-1 only — render GreenPulse "verified live" pulse only when the card
   // is NOT demoted AND average trust ≥ 0.85. Otherwise the pulse is misleading:
@@ -76,9 +83,24 @@ function HospitalCard({
               {hospital.etaMinutes} min
             </span>
           </div>
-          {liveEligible ? (
+          {liveEligible && validatorStatus === "ok" ? (
+            // Green pulse: live-data badge — requires liveEligible.
             <div className="mt-2">
               <GreenPulse />
+            </div>
+          ) : validatorStatus === "skipped" ? (
+            // Amber badge: pipeline-metadata badge — shows whenever the top-1
+            // card received validator_status="skipped", regardless of liveEligible.
+            // Cards 2-N receive validatorStatus=undefined so they show nothing.
+            <div className="mt-2">
+              <span
+                role="status"
+                aria-label="Validation skipped — high triage confidence; no two-model check performed"
+                className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-[11px] font-semibold text-amber-400"
+              >
+                <span aria-hidden="true" className="inline-block h-2 w-2 rounded-full bg-amber-400 opacity-70" />
+                Validation skipped
+              </span>
             </div>
           ) : null}
         </div>

@@ -5,6 +5,7 @@
 import type {
   CanonicalHospital,
   Hospital,
+  RailwayRecommendHospital,
   TrustEvidence,
   TrustKind,
   TrustSignal,
@@ -60,7 +61,35 @@ function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): nu
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-function trustEvidence(h: CanonicalHospital): TrustEvidence {
+type AdaptableHospital = CanonicalHospital | RailwayRecommendHospital;
+
+function isRailwayRecommendHospital(h: AdaptableHospital): h is RailwayRecommendHospital {
+  return "hospital_id" in h;
+}
+
+function hospitalId(h: AdaptableHospital): string {
+  return isRailwayRecommendHospital(h) ? String(h.hospital_id) : h.facility_id;
+}
+
+function trustScore(h: AdaptableHospital): number {
+  if (isRailwayRecommendHospital(h)) {
+    return Math.min(0.98, Math.max(0.35, h.specialty_match));
+  }
+  return h.trust_calibrated;
+}
+
+function trustSource(h: AdaptableHospital): string {
+  return isRailwayRecommendHospital(h) ? "live-route-score" : h.trust_source;
+}
+
+function trustEvidence(h: AdaptableHospital): TrustEvidence {
+  if (isRailwayRecommendHospital(h)) {
+    return {
+      summary: `Live route match ${(h.specialty_match * 100).toFixed(0)}%, estimated travel ${h.travel_min} min.`,
+      method: "live-route-score",
+      sourceId: String(h.hospital_id),
+    };
+  }
   return {
     summary: `Hybrid trust ${h.trust_calibrated.toFixed(2)} (raw ${h.trust_score.toFixed(2)}, source: ${h.trust_source}).`,
     lastUpdatedAt: undefined,
@@ -69,16 +98,18 @@ function trustEvidence(h: CanonicalHospital): TrustEvidence {
   };
 }
 
-function makeTrustSignals(h: CanonicalHospital): TrustSignal[] {
-  const score = h.trust_calibrated;
-  const ci = Math.min(0.15, Math.max(0.02, h.max_factor_disagreement ?? 0.04));
+function makeTrustSignals(h: AdaptableHospital): TrustSignal[] {
+  const score = trustScore(h);
+  const ci = isRailwayRecommendHospital(h)
+    ? 0.04
+    : Math.min(0.15, Math.max(0.02, h.max_factor_disagreement ?? 0.04));
   const evidence = trustEvidence(h);
   const kinds: TrustKind[] = ["Bed", "Oxygen", "Drug", "Specialist"];
   return kinds.map((kind) => ({
     kind,
     score,
     ci,
-    source: h.trust_source,
+    source: trustSource(h),
     evidence,
   }));
 }
@@ -89,7 +120,7 @@ export interface AdaptOptions {
 }
 
 export function adaptHospital(
-  h: CanonicalHospital,
+  h: AdaptableHospital,
   opts: AdaptOptions = {},
 ): Hospital {
   ensureUserLocation();
@@ -104,13 +135,18 @@ export function adaptHospital(
   const distanceKm = hasCoords
     ? Math.round(haversineKm(userLat, userLon, h.lat, h.lon) * 10) / 10
     : 0;
-  const etaMinutes = hasCoords ? Math.max(5, Math.round(distanceKm * 3)) : 0;
-  const demoted =
-    h.trust_source === "models-disagree" ||
-    h.trust_calibrated + MAX_FACTOR_DISAGREEMENT_THRESHOLD < h.trust_score;
+  const etaMinutes = isRailwayRecommendHospital(h)
+    ? h.travel_min
+    : hasCoords
+      ? Math.max(5, Math.round(distanceKm * 3))
+      : 0;
+  const demoted = isRailwayRecommendHospital(h)
+    ? h.specialty_match < 0.7
+    : h.trust_source === "models-disagree" ||
+      h.trust_calibrated + MAX_FACTOR_DISAGREEMENT_THRESHOLD < h.trust_score;
 
   return {
-    id: h.facility_id,
+    id: hospitalId(h),
     name: h.name,
     lat: h.lat,
     lng: h.lon,
@@ -122,7 +158,7 @@ export function adaptHospital(
 }
 
 export function adaptHospitals(
-  hospitals: CanonicalHospital[],
+  hospitals: AdaptableHospital[],
   opts: AdaptOptions = {},
 ): Hospital[] {
   return hospitals.map((h) => adaptHospital(h, opts));

@@ -2,25 +2,38 @@
 
 > Read this first to pick up where Tero left off.
 
-## Deploy status (2026-04-25 — latest)
+## Deploy status (2026-04-26 — updated)
 
-**Public URL:** `https://aarogyanet-api.onrender.com`
-**Current deploy state:** 🔴 RED — Render returns HTTP 404 for all routes.
-**Fix attempt in progress:** pushed `1a44278` + util/slowapi commits to `origin/main` to trigger a fresh Render build via `autoDeploy: true`. Monitor Render dashboard logs.
+**Backend (Railway):** `https://aarogyanet-api-production.up.railway.app`
+**Frontend (Vercel):** `https://app-wine-pi.vercel.app` (project not git-connected — manual `vercel --prod`)
+**Current deploy state:** 🟢 Backend GREEN — `/health` returns `{"status":"ok","fm_endpoints":20,"warehouse":"configured"}`.
 
-### Stop condition ⏳ NOT YET MET — verify before URL handoff
+> Note: earlier doc said "Render". That was wrong — actual host is Railway. `render.yaml` lingers in repo
+> but is unused; the live `aarogyanet-api.onrender.com` URL returns 404 (`x-render-routing: no-server`)
+> because no Render service is running.
+
+### Smoke check
 ```bash
-curl -s https://aarogyanet-api.onrender.com/health
-# Must return HTTP 200 with {"status":"ok"} or {"status":"degraded"}
+bash scripts/smoke_railway.sh
+# Or:
+curl -s https://aarogyanet-api-production.up.railway.app/health
 ```
 
-### URL handoff ⏳ PENDING — do AFTER green
-Share with both teammates once the health check passes:
+### Auto-deploy
+Railway listens to `main`. autoDeploy fires on every push to main.
+Feature branches (e.g. `feat/sponsor-stack`) are NOT deployed until merged.
+
+### Frontend wiring
+`arushi/app/.env.production` carries `VITE_PUBLIC_URL=https://aarogyanet-api-production.up.railway.app`.
+Without this baked in, Vite builds with `HAS_REAL_BACKEND=false` and the UI shows
+"Backend unreachable — showing offline demo data" (correct degraded behavior).
+
+### URL handoff
 - **Mubarak** (`Mozzicato@users.noreply.github.com`)
 - **Arushi** (`arushi2610@users.noreply.github.com`)
 
 Message template:
-> Hey! Our API is live at https://aarogyanet-api.onrender.com — hit `/health` to confirm, `/docs` for the Swagger UI.
+> Hey! Our API is live at https://aarogyanet-api-production.up.railway.app — hit `/health` to confirm, `/docs` for the Swagger UI.
 
 ---
 
@@ -71,6 +84,9 @@ Reproducible via `scripts/databricks/00_bronze_ingest.py` → `01_silver.sql` �
 - LLM artifact preserved at `data/llm_artifacts/trust_results_llama_3_3_70b.jsonl` — survives any workspace loss.
 - SQL queries via `python3 scripts/databricks/dbq.py "SELECT ..."`.
 - Batch LLM via `python3 scripts/databricks/llm_trust.py` (parallelised, 10 workers).
+- **`/triage` endpoint** — HTTP 200 locally (verified 2026-04-26). Keyword fallback + Llama 3.3 70B both working.
+- **`gold_trust_final` (Mian's gold table)** — 10000 rows ✅ (rule-inferred=9738, two-model-verified=139, models-disagree=110, llm-verified=13). Block 16 RouterAgent gate is satisfied.
+- **`v_trust_calibrated` view** — exists, 10000 rows ✅. Calibration arc demo (Aradhna 0.831→0.350) will work. No flag needed to Mian.
 
 ## Demo anchors (current workspace)
 

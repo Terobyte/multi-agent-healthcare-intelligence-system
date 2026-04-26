@@ -190,20 +190,18 @@ export async function getNGODashboardData(): Promise<NGODashboardData> {
       if (!data || !Array.isArray(data.underservedPins) || !Array.isArray(data.deadZones)) {
         throw new Error("backend returned invalid NGO data shape");
       }
-      _degraded = false;
       return data;
     } catch (err) {
       if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
         _authError = true;
-        _degraded = true;
         throw err;
       }
-      _degraded = true;
+      // NGO data is an optional dashboard feed. Its fallback should not flip
+      // the global patient-flow degraded banner when /recommend is healthy.
       // eslint-disable-next-line no-console
       console.warn("[api] /ngo-data failed, falling back to mocks:", err);
     }
   }
-  _degraded = true;
   await delay(260);
   return (await import("../../mocks/ngo-dashboard.json")).default as NGODashboardData;
 }

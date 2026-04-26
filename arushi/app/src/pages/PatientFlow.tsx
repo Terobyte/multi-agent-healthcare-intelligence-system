@@ -17,6 +17,7 @@ const agentById: Record<string, RenderedReasoningRow["agent"]> = {
 
 export default function PatientFlow() {
   const [hospitals, setHospitals] = useState<Hospital[]>([]);
+  const [validatorStatus, setValidatorStatus] = useState<"ok" | "skipped">("skipped");
   const [isLoading, setIsLoading] = useState(false);
   const [reservingId, setReservingId] = useState<string | null>(null);
   const [rows, setRows] = useState<RenderedReasoningRow[]>([]);
@@ -75,6 +76,7 @@ export default function PatientFlow() {
       const response = await recommend({ query });
       if (!isMountedRef.current || myReq !== requestSeqRef.current) return;
       setHospitals(response.hospitals);
+      setValidatorStatus(response.validator_status ?? "skipped");
       setDegraded(isDegraded());
       await streamReasoning((msgId, token) => {
         if (!isMountedRef.current || myReq !== requestSeqRef.current) return;
@@ -220,13 +222,14 @@ export default function PatientFlow() {
             </div>
           ) : null}
           <div className="space-y-[14px]">
-            {hospitals.map((hospital) => (
+            {hospitals.map((hospital, idx) => (
               <HospitalCard
                 key={hospital.id}
                 hospital={hospital}
                 onReserve={reserveHospital}
                 onTrustChipClick={onTrustChipClick}
                 reserving={reservingId === hospital.id}
+                validatorStatus={idx === 0 ? validatorStatus : undefined}
               />
             ))}
           </div>

@@ -11,7 +11,8 @@ import type {
   TriageOutput,
 } from "./lib/types";
 
-const BASE = (import.meta.env.VITE_PUBLIC_URL ?? "").replace(/\/+$/, "");
+const DEFAULT_API_BASE = "https://aarogyanet-api-production.up.railway.app";
+const BASE = (import.meta.env.VITE_PUBLIC_URL || DEFAULT_API_BASE).replace(/\/+$/, "");
 const DEMO_KEY = import.meta.env.VITE_DEMO_KEY ?? "";
 
 export const API_BASE = BASE;

@@ -38,6 +38,12 @@ export interface RecommendRequest {
 
 export interface RecommendResponse {
   hospitals: Hospital[];
+  // "ok" when top-1 hospital was validated; "skipped" when confidence ≥ 0.7
+  // or no hospitals were returned.  Never render a green checkmark when
+  // validator_status !== "ok".
+  validator_status?: "ok" | "skipped";
+  // null / undefined = unverified (validation was skipped or failed).
+  agreement?: boolean | null;
 }
 
 export interface ReserveRequest {
@@ -128,6 +134,19 @@ export interface CanonicalHospital {
   max_factor_disagreement: number | null;
 }
 
+// Current Railway /recommend response shape. Kept alongside the canonical
+// contract because production may lag schema migrations during demos.
+export interface RailwayRecommendHospital {
+  hospital_id: string;
+  name: string;
+  travel_min: number;
+  specialty_match: number;
+  cost_estimate_inr?: number;
+  non_medical_cost_inr?: number;
+  lat: number;
+  lon: number;
+}
+
 export interface TriageOutput {
   specialty: string;
   urgency: number;
@@ -140,8 +159,13 @@ export interface TriageOutput {
 
 export interface CanonicalRecommendResponse {
   triage: TriageOutput;
-  hospitals: CanonicalHospital[];
+  hospitals: Array<CanonicalHospital | RailwayRecommendHospital>;
   fast_path: boolean;
+  // Cost-guard fields — mirrored from RecommendResponse on the backend.
+  // "ok" = top-1 validated; "skipped" = confidence ≥ 0.7 or empty list.
+  validator_status: "ok" | "skipped";
+  // null = unverified (skipped or validator DB unavailable).
+  agreement: boolean | null;
 }
 
 export interface BookingOutput {
