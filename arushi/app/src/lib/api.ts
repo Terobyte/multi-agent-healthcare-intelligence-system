@@ -187,6 +187,9 @@ export async function getNGODashboardData(): Promise<NGODashboardData> {
   if (HAS_REAL_BACKEND) {
     try {
       const data = await canonicalApi.ngoData();
+      if (!data || !Array.isArray(data.underservedPins) || !Array.isArray(data.deadZones)) {
+        throw new Error("backend returned invalid NGO data shape");
+      }
       _degraded = false;
       return data;
     } catch (err) {

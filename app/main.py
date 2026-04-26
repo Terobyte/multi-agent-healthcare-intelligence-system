@@ -509,6 +509,15 @@ async def outcome_route(request: Request, fb: OutcomeFeedback):
         key = f"{fb.patient_id}|{fb.facility_id}|{fb.factor}|{fb.ts.isoformat()}"
         fid = f"fb_{hashlib.sha256(key.encode()).hexdigest()[:12]}"
 
+    # Check BEFORE the MERGE so "already_recorded" is meaningful.
+    # Post-MERGE check is always truthy regardless of whether we inserted.
+    pre_existing = await asyncio.to_thread(
+        warehouse_query,
+        "SELECT 1 FROM workspace.default.outcome_feedback WHERE feedback_id=? LIMIT 1",
+        [fid],
+    )
+    is_new = not pre_existing
+
     await asyncio.to_thread(
         warehouse_query,
         """
@@ -530,16 +539,11 @@ async def outcome_route(request: Request, fb: OutcomeFeedback):
             fid, fb.transaction_id, fb.patient_id, fb.facility_id,
             fb.factor, fb.actual_value, fb.llm_predicted,
             fb.source, fb.notes,
-            fb.ts.strftime("%Y-%m-%d %H:%M:%S"),
+            fb.ts.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
         ],
     )
 
-    existing = await asyncio.to_thread(
-        warehouse_query,
-        "SELECT feedback_id FROM workspace.default.outcome_feedback WHERE feedback_id=? LIMIT 1",
-        [fid],
-    )
-    return {"status": "recorded" if existing else "already_recorded", "feedback_id": fid}
+    return {"status": "recorded" if is_new else "already_recorded", "feedback_id": fid}
 
 
 _NGO_QUERY = """
@@ -560,8 +564,6 @@ LEFT JOIN workspace.default.gold_trust_final f
 WHERE (g.n_cardio = 0 OR g.n_emergency = 0 OR g.n_pediatric = 0 OR g.n_oncology = 0)
 GROUP BY g.pincode, g.state, g.n_cardio, g.n_emergency,
          g.n_pediatric, g.n_oncology, g.n_facilities, g.is_specialty_desert
-HAVING AVG(CAST(f.lat AS DOUBLE)) IS NOT NULL
-   AND AVG(CAST(f.lon AS DOUBLE)) IS NOT NULL
 ORDER BY g.is_specialty_desert DESC, CAST(g.n_facilities AS LONG) ASC
 LIMIT 250
 """
@@ -598,9 +600,11 @@ async def ngo_data_endpoint(request: Request):
         pincode  = str(r[0]) if r[0] is not None else ""
         state    = str(r[1]) if r[1] is not None else "Unknown"
         n_fac    = int(r[6]) if r[6] is not None else 0
-        is_desert = bool(r[7])
-        avg_lat  = float(r[8])
-        avg_lon  = float(r[9])
+        is_desert = r[7] is True or r[7] == "true"
+        avg_lat  = float(r[8]) if r[8] is not None else None
+        avg_lon  = float(r[9]) if r[9] is not None else None
+        if avg_lat is None or avg_lon is None:
+            continue
 
         for specialty, col_idx in specialty_cols:
             n_spec = int(r[col_idx]) if r[col_idx] is not None else 0
