@@ -542,6 +542,104 @@ async def outcome_route(request: Request, fb: OutcomeFeedback):
     return {"status": "recorded" if existing else "already_recorded", "feedback_id": fid}
 
 
+_NGO_QUERY = """
+SELECT
+  g.pincode,
+  g.state,
+  CAST(g.n_cardio    AS LONG) AS n_cardio,
+  CAST(g.n_emergency AS LONG) AS n_emergency,
+  CAST(g.n_pediatric AS LONG) AS n_pediatric,
+  CAST(g.n_oncology  AS LONG) AS n_oncology,
+  CAST(g.n_facilities AS LONG) AS n_facilities,
+  g.is_specialty_desert,
+  AVG(CAST(f.lat AS DOUBLE)) AS avg_lat,
+  AVG(CAST(f.lon AS DOUBLE)) AS avg_lon
+FROM workspace.default.gold_pin_capabilities g
+LEFT JOIN workspace.default.gold_trust_final f
+  ON CAST(f.pincode AS STRING) = CAST(g.pincode AS STRING)
+WHERE (g.n_cardio = 0 OR g.n_emergency = 0 OR g.n_pediatric = 0 OR g.n_oncology = 0)
+GROUP BY g.pincode, g.state, g.n_cardio, g.n_emergency,
+         g.n_pediatric, g.n_oncology, g.n_facilities, g.is_specialty_desert
+HAVING AVG(CAST(f.lat AS DOUBLE)) IS NOT NULL
+   AND AVG(CAST(f.lon AS DOUBLE)) IS NOT NULL
+ORDER BY g.is_specialty_desert DESC, CAST(g.n_facilities AS LONG) ASC
+LIMIT 250
+"""
+
+_ngo_cache: dict = {}
+
+
+@app.get("/ngo-data")
+@limiter.limit("10/minute")
+async def ngo_data_endpoint(request: Request):
+    now_ts = time.time()
+    if _ngo_cache.get("ts", 0) + 300 > now_ts and "data" in _ngo_cache:
+        cached = dict(_ngo_cache["data"])
+        cached["cached"] = True
+        return cached
+
+    try:
+        rows = await asyncio.to_thread(warehouse_query, _NGO_QUERY, [])
+    except Exception:
+        logger.exception("ngo_data_query_failed")
+        rows = []
+
+    specialty_cols = [
+        ("Cardiac",   2),
+        ("Trauma",    3),
+        ("Pediatric", 4),
+        ("Neuro",     5),
+    ]
+
+    pins = []
+    state_desert_count: dict[str, int] = {}
+
+    for r in (rows or []):
+        pincode  = str(r[0]) if r[0] is not None else ""
+        state    = str(r[1]) if r[1] is not None else "Unknown"
+        n_fac    = int(r[6]) if r[6] is not None else 0
+        is_desert = bool(r[7])
+        avg_lat  = float(r[8])
+        avg_lon  = float(r[9])
+
+        for specialty, col_idx in specialty_cols:
+            n_spec = int(r[col_idx]) if r[col_idx] is not None else 0
+            if n_spec > 0:
+                continue
+            severity = "high" if is_desert else ("medium" if n_fac < 3 else "low")
+            pop_gap = max(500, (6 - min(n_fac, 5)) * 8000)
+            pins.append({
+                "id": f"{pincode}_{specialty}",
+                "pin": pincode,
+                "specialty": specialty,
+                "severity": severity,
+                "lat": avg_lat,
+                "lng": avg_lon,
+                "populationGap": pop_gap,
+            })
+            if is_desert:
+                state_desert_count[state] = state_desert_count.get(state, 0) + 1
+
+    dead_zones = [
+        {
+            "id": f"dz_{state.replace(' ', '_').lower()}",
+            "label": f"{state} — {count} desert PINs",
+            "description": f"{count} pincodes in {state} lack trusted facilities for critical specialties.",
+        }
+        for state, count in sorted(state_desert_count.items(), key=lambda x: -x[1])
+    ][:6]
+
+    data = {
+        "specialties": ["Trauma", "Cardiac", "Neuro", "Pediatric"],
+        "underservedPins": pins[:200],
+        "deadZones": dead_zones,
+        "cached": False,
+    }
+    _ngo_cache["data"] = data
+    _ngo_cache["ts"] = now_ts
+    return data
+
+
 # Sponsor stack — feature-flagged routes that wrap existing agents for the
 # Databricks-criteria pitch. Mounted last so the existing routes stay the
 # canonical demo path. See app/sponsor/routes.py and SPONSOR_STACK_PLAN.md.
