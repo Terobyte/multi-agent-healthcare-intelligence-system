@@ -7,6 +7,7 @@ only when its env flag is true, and every public route is gated by
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from typing import Any
@@ -93,7 +94,10 @@ def register(app: FastAPI, limiter: Limiter, require_demo_key: Any) -> None:
         from app.sponsor.agent_bricks import run_triage
 
         cleaned_symptoms = sanitize(body.symptoms)
-        result = run_triage(cleaned_symptoms, body.language)
+        # bug #115: run_triage calls Databricks model serving synchronously.
+        # Without to_thread the FastAPI event loop stalls for the full LLM
+        # round-trip and every other concurrent request queues behind it.
+        result = await asyncio.to_thread(run_triage, cleaned_symptoms, body.language)
         return JSONResponse(
             content={
                 "agent": "mosaic_ai_agent_framework",

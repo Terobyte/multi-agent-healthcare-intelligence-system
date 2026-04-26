@@ -577,7 +577,12 @@ async def outcome_route(request: Request, fb: OutcomeFeedback):
         # adversarial patient_id/factor strings carrying \x00-\x1f could shift the
         # hash via invisible chars, letting one logical feedback row register
         # under multiple feedback_id slots.
-        raw_key = f"{fb.patient_id}|{fb.facility_id}|{fb.factor}|{fb.ts.isoformat()}"
+        # bug #117: use the timezone-coerced fb_ts so a duplicate post that
+        # happens to add `+00:00` doesn't produce a different feedback_id and
+        # bypass the dedup gate. Also use the hashed patient id (bug #116) so
+        # the auto-fid never carries raw PII into the warehouse.
+        hashed_for_fid = hash_patient_id(fb.patient_id)
+        raw_key = f"{hashed_for_fid}|{fb.facility_id}|{fb.factor}|{fb_ts.isoformat()}"
         key = re.sub(r"[\x00-\x1f]", "", raw_key)
         fid = f"fb_{hashlib.sha256(key.encode()).hexdigest()[:12]}"
 
@@ -675,17 +680,28 @@ async def ngo_data_endpoint(request: Request):
             cached["cached"] = True
             return cached
 
+        warehouse_failed = False
         try:
             rows = await asyncio.to_thread(warehouse_query, _NGO_QUERY, [])
         except Exception:
+            # bug #118: do NOT cache an empty result that came from the
+            # exception path — every caller in the next 5 minutes would see
+            # an empty NGO map with no error banner. We compute the response
+            # from rows=[] but skip the cache write at the end.
             logger.exception("ngo_data_query_failed")
             rows = []
+            warehouse_failed = True
 
+        # bug #119: query selects n_cardio(2), n_emergency(3), n_pediatric(4),
+        # n_oncology(5). The previous label "Neuro" was pointing at the
+        # oncology column, so every "neurological care desert" pin on the NGO
+        # map was actually an oncology gap — wrong demo story, wrong public
+        # health signal. Realign the label to the underlying column.
         specialty_cols = [
             ("Cardiac",   2),
             ("Trauma",    3),
             ("Pediatric", 4),
-            ("Neuro",     5),
+            ("Oncology",  5),
         ]
 
         pins = []
@@ -729,13 +745,17 @@ async def ngo_data_endpoint(request: Request):
         ][:6]
 
         data = {
-            "specialties": ["Trauma", "Cardiac", "Neuro", "Pediatric"],
+            "specialties": ["Trauma", "Cardiac", "Oncology", "Pediatric"],
             "underservedPins": pins[:200],
             "deadZones": dead_zones,
             "cached": False,
         }
-        _ngo_cache["data"] = data
-        _ngo_cache["ts"] = now_ts
+        # bug #118: only cache when the warehouse round-trip actually succeeded.
+        # Caching the empty-from-error result would mask the outage for 5 min
+        # and silently render an empty NGO map with no banner.
+        if not warehouse_failed:
+            _ngo_cache["data"] = data
+            _ngo_cache["ts"] = now_ts
         return data
 
 
