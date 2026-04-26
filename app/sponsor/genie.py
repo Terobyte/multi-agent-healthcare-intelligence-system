@@ -77,12 +77,15 @@ class GenieClient:
     def _workspace(self) -> Any:
         # Lazy-init under a lock — concurrent live requests must not race to
         # create multiple WorkspaceClient instances and burn parallel auth tokens.
+        # bug #101: pass an explicit http timeout so an unresponsive auth
+        # endpoint cannot pin the worker (and the lock) forever. The SDK reads
+        # ``http_timeout_seconds`` directly off WorkspaceClient kwargs.
         lock = self._workspace_lock
         with lock:
             if self._w is None:
                 from databricks.sdk import WorkspaceClient
 
-                self._w = WorkspaceClient()
+                self._w = WorkspaceClient(http_timeout_seconds=15)
         return self._w
 
     def ask(self, conversation_id: str | None, query: str) -> dict[str, Any]:

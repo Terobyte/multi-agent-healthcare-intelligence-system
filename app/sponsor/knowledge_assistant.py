@@ -67,7 +67,10 @@ def _keyword_match(symptom_text: str, corpus: list[dict[str, Any]], k: int = 5) 
     """
     text_lower = symptom_text.lower()
     scored: list[tuple[int, int, dict[str, Any]]] = []
+    malformed = 0
+    inspected = 0
     for entry in corpus:
+        inspected += 1
         score = sum(1 for kw in entry.get("keywords", []) if kw.lower() in text_lower)
         if score <= 0:
             continue
@@ -76,8 +79,18 @@ def _keyword_match(symptom_text: str, corpus: list[dict[str, Any]], k: int = 5) 
             urgency_int = int(raw_urgency)
         except (TypeError, ValueError):
             logger.debug("skipping corpus row with non-numeric urgency: %r", raw_urgency)
+            malformed += 1
             continue
         scored.append((score, urgency_int, entry))
+    # bug #113: surface a degraded corpus loudly. If >10% of inspected rows
+    # were unparseable, an upstream ETL change has likely broken the source.
+    # Without this warning callers see "no matches" — indistinguishable from
+    # a legitimate empty result — and the issue ships silently.
+    if inspected > 0 and (malformed / inspected) > 0.10:
+        logger.warning(
+            "knowledge_assistant_corpus_degraded malformed=%d inspected=%d (%.0f%%)",
+            malformed, inspected, 100.0 * malformed / inspected,
+        )
     scored.sort(key=lambda x: (-x[0], -x[1]))
     return [
         {

@@ -459,12 +459,31 @@ def route(
         # trust_effective: outcome-calibrated score when v_trust_calibrated is
         # available; otherwise equals raw trust_score (_fetch_candidates ensures
         # the key is always present via setdefault).
-        trust = float(row.get("trust_effective") or row.get("trust_score") or 0.0)
+        # bug #82: `or` falls back when the value is 0.0, so a calibrated trust
+        # of exactly 0.0 silently used the raw trust_score. Use explicit None
+        # checks so a real 0.0 calibration is preserved (and gates the
+        # _TRUST_FLOOR check correctly).
+        trust_eff = row.get("trust_effective")
+        trust_raw = row.get("trust_score")
+        if trust_eff is not None:
+            trust = float(trust_eff)
+        elif trust_raw is not None:
+            trust = float(trust_raw)
+        else:
+            trust = 0.0
         if trust < _TRUST_FLOOR:
             continue  # drop low-credibility hospitals (synthetic / arc-penalised)
-        gold_p_bed = float(row.get("p_bed") or 0.0)
-        # Use live prediction when available; fall back to Gold column.
-        p_bed = preds.get(fid, gold_p_bed)
+        # bug #81: same trap on p_bed — a true 0.0 vs missing data both used
+        # 0.0, but a missing p_bed should fall through to the live prediction.
+        gold_p_bed_raw = row.get("p_bed")
+        gold_p_bed = float(gold_p_bed_raw) if gold_p_bed_raw is not None else None
+        # Use live prediction when available; fall back to Gold column. If both
+        # absent, use a neutral 0.5 — better than 0.0, which would otherwise
+        # zero-out the composite score and silently drop the hospital from the
+        # ranking entirely.
+        p_bed = preds.get(fid)
+        if p_bed is None:
+            p_bed = gold_p_bed if gold_p_bed is not None else 0.5
 
         raw_lat = row.get("lat")
         raw_lon = row.get("lon")

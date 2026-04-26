@@ -305,9 +305,14 @@ def triage(symptoms: str, language: str = "en") -> TriageOutput:
             future = _ex.submit(_do_predict)
             resp = future.result(timeout=_PREDICT_TIMEOUT_S)
         raw: str = resp["choices"][0]["message"]["content"].strip()
-        # Strip accidental markdown fences that some model versions emit
+        # Strip accidental markdown fences that some model versions emit.
+        # bug #83: defensive len-check around split[1] — a future model that
+        # emits a single dangling fence ("```{partial..." with no closer)
+        # would otherwise crash on IndexError when the json-prefix strip
+        # runs against an empty list slice.
         if raw.startswith("```"):
-            raw = raw.split("```", 2)[1]
+            parts = raw.split("```", 2)
+            raw = parts[1] if len(parts) >= 2 else raw
             if raw.startswith("json"):
                 raw = raw[4:]
             raw = raw.strip()

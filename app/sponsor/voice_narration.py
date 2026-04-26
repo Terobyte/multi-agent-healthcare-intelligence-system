@@ -157,7 +157,11 @@ def _try_sidecar(text: str, lang: str) -> Iterator[bytes] | None:
                 "POST",
                 _SIDECAR_URL,
                 json={"text": text, "lang": lang},
-                timeout=10.0,
+                # bug #102: scalar 10.0 gave only read timeout — a hung TCP
+                # SYN to the sidecar would still block the worker. Explicit
+                # connect/read split surfaces a slow-DNS or unreachable host
+                # in <5s while still allowing slow but live token streams.
+                timeout=httpx.Timeout(connect=5.0, read=10.0, write=5.0, pool=5.0),
             ) as resp:
                 if resp.status_code != 200:
                     logger.warning("voice sidecar returned %s", resp.status_code)
