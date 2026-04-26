@@ -137,7 +137,31 @@ export const api = {
     ),
   ngoData: (signal?: AbortSignal) =>
     call<NGODashboardData>("GET", "/ngo-data", undefined, { signal }),
+  // Sponsor route — Databricks Genie passthrough. Returns natural-language
+  // answer + generated SQL + table rows when SPONSOR_GENIE_LIVE=true on the
+  // backend, or canned demo data otherwise. Marked mutating so the X-Demo-Key
+  // header is sent (route is auth-gated on the backend).
+  genie: (
+    query: string,
+    conversation_id?: string,
+    signal?: AbortSignal,
+  ) =>
+    call<GenieResponse>(
+      "POST",
+      "/sponsor/genie/query",
+      { query, conversation_id: conversation_id ?? null },
+      { mutating: true, signal },
+    ),
 };
+
+export interface GenieResponse {
+  conversation_id: string | null;
+  sql: string;
+  columns?: string[];
+  rows: Array<Array<string | number | boolean | null>>;
+  explanation: string;
+  source: "live" | "canned";
+}
 
 // SSE URLs — EventSource cannot send custom headers, so /sse stays open
 // (Tero Block 35c protects /book + /outcome via X-Demo-Key, not /sse).

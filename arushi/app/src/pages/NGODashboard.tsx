@@ -5,6 +5,7 @@ import L from "leaflet";
 import { Circle, MapContainer, Marker, TileLayer, Tooltip, useMap } from "react-leaflet";
 import { getNGODashboardData } from "../lib/api";
 import type { NGODashboardData, NGOPin } from "../lib/types";
+import GeniePanel from "../components/GeniePanel";
 
 // Specialty → warm-palette dot color. Matched pins (or all pins on "All")
 // render in their full specialty hue; unmatched pins (when a filter is active)
@@ -315,6 +316,8 @@ export default function NGODashboard() {
           </div>
         </div>
       </div>
+
+      <GeniePanel />
     </motion.div>
   );
 }
