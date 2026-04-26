@@ -1,15 +1,14 @@
 import os
 
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
     databricks_host: str
     databricks_token: str
     databricks_warehouse_id: str
-
-    class Config:
-        env_file = ".env"
 
 
 settings = Settings()
@@ -20,3 +19,4 @@ settings = Settings()
 # on first /health probe. setdefault preserves Render-set env vars in deploy.
 os.environ.setdefault("DATABRICKS_HOST", settings.databricks_host)
 os.environ.setdefault("DATABRICKS_TOKEN", settings.databricks_token)
+os.environ.setdefault("DATABRICKS_WAREHOUSE_ID", settings.databricks_warehouse_id)
