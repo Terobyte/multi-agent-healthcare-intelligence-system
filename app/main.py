@@ -25,6 +25,7 @@ from app.agents.triage import triage as _triage_agent
 from app.agents.validator import validate as _validate
 from app.db import warehouse_query
 from app.schemas import BookingOutput, OutcomeFeedback, ReasoningPanelEvent, TriageOutput
+from app.util import hash_patient_id
 from app.settings import settings
 from contracts.schemas import RankedHospital
 import mlflow.deployments
@@ -501,6 +502,8 @@ async def outcome_route(request: Request, fb: OutcomeFeedback):
     if fb.ts < now - timedelta(days=30):
         raise HTTPException(status_code=422, detail="ts older than 30 days")
 
+    hashed_pid = hash_patient_id(fb.patient_id)
+
     # bug #35: wrap each warehouse_query call so transient warehouse errors
     # surface as a clear 503 service-unavailable instead of leaking through
     # the global Exception handler as a generic 500. Frontend can then show
@@ -574,7 +577,7 @@ async def outcome_route(request: Request, fb: OutcomeFeedback):
                s.actual_value, s.llm_predicted, s.source, s.notes, s.ts)
             """,
             [
-                fid, fb.transaction_id, fb.patient_id, fb.facility_id,
+                fid, fb.transaction_id, hashed_pid, fb.facility_id,
                 fb.factor, fb.actual_value, fb.llm_predicted,
                 fb.source, fb.notes,
                 fb.ts.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),

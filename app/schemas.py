@@ -52,7 +52,7 @@ class BookingOutput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     transaction_id: Optional[str] = Field(default=None, max_length=2000)   # None if REJECTED before insert
-    status: Literal["COMMITTED", "ROLLED_BACK", "REJECTED"]
+    status: Literal["COMMITTED", "ROLLED_BACK", "REJECTED", "ROLLBACK_FAILED"]
     resources: dict[str, str] = Field(max_length=16)
     facility_id: str = Field(max_length=64)
     reason: Optional[str] = Field(default=None, max_length=200)            # human-readable reason for REJECTED/ROLLED_BACK

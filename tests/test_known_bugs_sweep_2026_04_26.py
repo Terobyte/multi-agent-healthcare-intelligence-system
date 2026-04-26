@@ -265,14 +265,19 @@ def test_bug37_sse_session_id_must_have_length_and_charset_validation() -> None:
 
     # At module level there must be a type alias (SessionId or similar) built
     # from Annotated[str, Query(max_length=..., pattern=...)].
+    # Can be plain assignment (SessionId = Annotated[...]) or annotated.
     found_alias = False
     for node in tree.body:
-        if not isinstance(node, ast.AnnAssign):
+        value = None
+        if isinstance(node, ast.AnnAssign) and isinstance(node.value, ast.Subscript):
+            value = node.value
+        elif isinstance(node, ast.Assign) and node.targets:
+            # SessionId = Annotated[str, Query(...)]
+            if isinstance(node.value, ast.Subscript):
+                value = node.value
+        if value is None:
             continue
-        if not isinstance(node.value, ast.Subscript):
-            continue
-        # node.value is Annotated[str, Query(...)] — walk for Query call.
-        for child in ast.walk(node.value):
+        for child in ast.walk(value):
             if isinstance(child, ast.Call):
                 func_name = (
                     child.func.id if isinstance(child.func, ast.Name)
@@ -956,12 +961,14 @@ def test_mubarak_outcome_persists_hashed_patient_id() -> None:
         "not stored in a local variable like hashed_pid for downstream use."
     )
 
-    # 3. The MERGE warehouse_query must use hashed_pid, NOT fb.patient_id.
-    #    Find the MERGE block and check it references hashed_pid.
-    merge_match = re.search(r"MERGE INTO.*?VALUES\s*\(.*?\)", fn_src, re.S)
-    assert merge_match, "precondition: MERGE INTO statement not found in outcome_route"
-    merge_block = merge_match.group(0)
-    assert "hashed_pid" in merge_block, (
+    # 3. The MERGE warehouse_query params must use hashed_pid, NOT fb.patient_id.
+    #    The SQL template uses ? placeholders, so check the Python params list.
+    merge_idx = fn_src.find("MERGE INTO")
+    assert merge_idx != -1, "precondition: MERGE INTO statement not found in outcome_route"
+    after_merge = fn_src[merge_idx:]
+    # Find the Python list [...] that supplies the ? params.
+    params_match = re.search(r"\[\s*fid,\s*fb\.transaction_id,\s*(\w+)", after_merge)
+    assert params_match and params_match.group(1) == "hashed_pid", (
         "mubarak #2: MERGE warehouse_query still uses fb.patient_id instead of "
         "hashed_pid. Raw patient_id leaks into the warehouse."
     )
