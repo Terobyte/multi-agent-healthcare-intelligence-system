@@ -1,3 +1,9 @@
+// Hybrid API client.
+// - VITE_PUBLIC_URL set → call canonical FastAPI (Tero+Mubarak), adapt to legacy UI shape.
+// - VITE_PUBLIC_URL empty → fall back to local JSON mocks (dev / offline demo).
+
+import { api as canonicalApi, HAS_REAL_BACKEND } from "../api";
+import { adaptHospitals } from "./adapter";
 import type {
   DoctorCopilotData,
   Hospital,
@@ -28,25 +34,38 @@ const scoreHospitalForQuery = (hospital: Hospital, query: string) => {
 };
 
 export async function recommend(request: RecommendRequest): Promise<RecommendResponse> {
-  await delay(420);
-  const data = (await import("../../../mocks/hospitals.json")).default as RecommendResponse;
-
-  const query = request.query.trim().toLowerCase();
-  if (query.includes("simulate error")) {
+  const query = request.query.trim();
+  const lower = query.toLowerCase();
+  if (lower.includes("simulate error")) {
     throw new Error("Mock recommendation service unavailable");
   }
-
-  if (query.includes("no match")) {
+  if (lower.includes("no match")) {
     return { hospitals: [] };
   }
 
+  if (HAS_REAL_BACKEND) {
+    const resp = await canonicalApi.recommend(query);
+    return { hospitals: adaptHospitals(resp.hospitals) };
+  }
+
+  await delay(420);
+  const data = (await import("../../../mocks/hospitals.json")).default as RecommendResponse;
   const hospitals = [...data.hospitals].sort(
-    (a, b) => scoreHospitalForQuery(b, request.query) - scoreHospitalForQuery(a, request.query),
+    (a, b) => scoreHospitalForQuery(b, query) - scoreHospitalForQuery(a, query),
   );
   return { hospitals };
 }
 
 export async function reserve(request: ReserveRequest): Promise<ReserveResponse> {
+  if (HAS_REAL_BACKEND) {
+    const patient_id = `demo_${request.hospitalId.toLowerCase()}_${Date.now().toString().slice(-6)}`;
+    const out = await canonicalApi.book(request.hospitalId, patient_id);
+    return {
+      success: out.status === "COMMITTED",
+      referenceId: out.transaction_id ?? `RSV-${request.hospitalId}-FAILED`,
+    };
+  }
+
   await delay(650);
   return {
     success: true,
@@ -57,6 +76,8 @@ export async function reserve(request: ReserveRequest): Promise<ReserveResponse>
 export async function streamReasoning(
   onToken: (msgId: string, token: string, done: boolean) => void,
 ): Promise<void> {
+  // Mock-only: drives the legacy ReasoningPanel rows-prop UI. For real SSE
+  // against /sse use ReasoningPanelSSE component (canonical event vocab).
   const data = (await import("../../../mocks/reasoning.json")).default as ReasoningMessage[];
 
   for (const message of data) {

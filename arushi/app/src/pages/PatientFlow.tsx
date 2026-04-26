@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import AtomicBookingTiles, { type BookingState } from "../components/AtomicBookingTiles";
 import ChatInput from "../components/ChatInput";
 import HospitalCard from "../components/HospitalCard";
@@ -32,17 +32,32 @@ export default function PatientFlow() {
     evidence: "",
   });
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // Block setState after unmount and stop the auto-fetch effect from re-firing
+  // forever when "no match" leaves both hospitals + rows empty (audit finding).
+  const isMountedRef = useRef(true);
+  const hasInitializedRef = useRef(false);
+  const bookingTimersRef = useRef<number[]>([]);
 
-  const rowsById = useMemo(() => new Map(rows.map((row) => [row.id, row])), [rows]);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      bookingTimersRef.current.forEach((id) => window.clearTimeout(id));
+      bookingTimersRef.current = [];
+    };
+  }, []);
 
-  const runRecommendation = async (query: string) => {
+  const runRecommendation = useCallback(async (query: string) => {
+    if (!isMountedRef.current) return;
     setIsLoading(true);
     setErrorMessage(null);
     setRows([]);
     try {
       const response = await recommend({ query });
+      if (!isMountedRef.current) return;
       setHospitals(response.hospitals);
       await streamReasoning((msgId, token) => {
+        if (!isMountedRef.current) return;
         setRows((prev) => {
           const existing = prev.find((x) => x.id === msgId);
           if (!existing) {
@@ -55,37 +70,48 @@ export default function PatientFlow() {
         });
       });
     } catch {
+      if (!isMountedRef.current) return;
       setHospitals([]);
       setRows([]);
       setErrorMessage("Could not fetch recommendations. Try again in a few seconds.");
     } finally {
-      setIsLoading(false);
+      if (isMountedRef.current) setIsLoading(false);
     }
-  };
+  }, []);
 
   const reserveHospital = async (hospitalId: string) => {
+    // Cancel any timers from a prior reserve so a new click can't race the
+    // tail of an earlier success/rollback animation chain (audit finding).
+    bookingTimersRef.current.forEach((id) => window.clearTimeout(id));
+    bookingTimersRef.current = [];
     setReservingId(hospitalId);
     setBookingState("reserving");
     setErrorMessage(null);
     try {
       await reserve({ hospitalId });
+      if (!isMountedRef.current) return;
       setBookingState("success");
-      window.setTimeout(() => setBookingState("rollback"), 1800);
-      window.setTimeout(() => setBookingState("idle"), 2800);
+      bookingTimersRef.current.push(
+        window.setTimeout(() => isMountedRef.current && setBookingState("rollback"), 1800),
+        window.setTimeout(() => isMountedRef.current && setBookingState("idle"), 2800),
+      );
     } catch {
+      if (!isMountedRef.current) return;
       setBookingState("rollback");
       setErrorMessage("Reservation failed. Please retry.");
-      window.setTimeout(() => setBookingState("idle"), 1300);
+      bookingTimersRef.current.push(
+        window.setTimeout(() => isMountedRef.current && setBookingState("idle"), 1300),
+      );
     } finally {
-      setReservingId(null);
+      if (isMountedRef.current) setReservingId(null);
     }
   };
 
   useEffect(() => {
-    if (hospitals.length === 0 && rowsById.size === 0) {
-      void runRecommendation("Auto triage critical care options nearby.");
-    }
-  }, [hospitals.length, rowsById.size]);
+    if (hasInitializedRef.current) return;
+    hasInitializedRef.current = true;
+    void runRecommendation("Auto triage critical care options nearby.");
+  }, [runRecommendation]);
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">

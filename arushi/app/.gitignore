@@ -2,3 +2,12 @@ node_modules
 dist
 .DS_Store
 *.local
+
+# tsc -b incremental cache
+*.tsbuildinfo
+
+# generated from .ts config files (tsc emits .d.ts and .js next to .ts when noEmit unset)
+*.config.d.ts
+vite.config.js
+tailwind.config.js
+postcss.config.js.d.ts

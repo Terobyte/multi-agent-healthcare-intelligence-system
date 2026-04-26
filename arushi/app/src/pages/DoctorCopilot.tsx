@@ -163,10 +163,13 @@ export default function DoctorCopilot() {
             </div>
             <button
               type="button"
-              className="mt-4 inline-flex items-center gap-2 rounded-xl bg-indigo-500 px-3 py-2 text-xs font-semibold text-white transition hover:bg-indigo-400"
+              disabled
+              aria-disabled="true"
+              title="Wired in Block 28 (reportlab via /transfer.referral_pdf_b64)"
+              className="mt-4 inline-flex items-center gap-2 rounded-xl bg-indigo-500/40 px-3 py-2 text-xs font-semibold text-white/70 transition disabled:cursor-not-allowed"
             >
               <FileText size={14} />
-              Generate referral PDF snapshot
+              Generate referral PDF snapshot (coming soon)
             </button>
           </div>
         </div>
