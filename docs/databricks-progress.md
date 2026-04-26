@@ -196,13 +196,13 @@ Sample response (from real test):
 | `workspace.default.gold_trust_llm` | 256 | Gold — LLM-extracted Trust on rich hospitals (Llama 3.3 70B) |
 | `workspace.default.gold_trust_llm_v2` | 255 | Gold — second-model LLM scoring (Llama 4 Maverick, Validator role) |
 | `workspace.default.gold_trust_two_model` | 262 | Gold — joined v1+v2 with agreement metrics (max_factor_disagreement, verification_status) |
-| `workspace.default.gold_trust_final` | 10,000 | Gold — **HYBRID** with 4-tier badge: two-model-verified (80) / models-disagree (169) / llm-verified (13) / rule-inferred (9738) |
+| `workspace.default.gold_trust_final` | 10,000 | Gold — **HYBRID** with 4-tier badge: two-model-verified (139) / models-disagree (110) / llm-verified (13) / rule-inferred (9738) |
 | `workspace.default.txn_atomic` | 6 (seed) | Atomic booking ledger (saga-commit pattern) |
 | `workspace.default.bed_reservations` | 6 (seed) | Per-bed Delta table |
 | `workspace.default.ambulance_dispatches` | 5 (seed) | Per-vehicle Delta table |
 | `workspace.default.doctor_slots` | 5 (seed) | Per-slot Delta table |
 | `workspace.default.drug_reservations` | 5 (seed) | Per-drug Delta table |
-| `workspace.default.outcome_feedback` | 14 (seed) | Append-only patient ping ledger |
+| `workspace.default.outcome_feedback` | 18 (seed) | Append-only patient ping ledger |
 | `workspace.default.silver_facilities_text` | 10,000 | Concatenated text per facility for vector embedding |
 | `workspace.default.silver_facilities_text_idx` | provisioning | Vector Search Delta-sync index (BGE-large) |
 
@@ -210,6 +210,19 @@ Sample response (from real test):
 - `v_committed_bookings` — only COMMITTED transactions visible (rolled-back filtered)
 - `v_agent_reputation` — per-hospital reputation_score from outcomes
 - `v_trust_calibrated` — gold_trust_final adjusted by reputation when n_outcomes ≥ 5
+
+### Two-model coverage (256 vs 255 vs 249)
+
+The two LLM artifacts cover **slightly different facility sets** because each was generated against the same `silver_facilities` query (`facility_type='hospital' AND size(equipment)>=1 AND ... LIMIT 262`) but Llama 4 Maverick had 1 row dropped during loading (`_error` from JSON parse failure on the model output) and 6 facilities differ between the two runs due to non-deterministic ORDER BY ties on identical sort keys.
+
+| Set | Count | Badge |
+|---|---|---|
+| Llama 3.3 v1 only | 7 | `llm-verified` (single-model) |
+| Llama 4 Maverick v2 only | 6 | `llm-verified` (single-model) |
+| Both (overlap) | 249 | `two-model-verified` (139) or `models-disagree` (110) |
+| Total LLM-touched | 262 | — |
+
+So the demo claim "256 hospitals scored by Llama 3.3" is exact, but the precise framing is: 262 unique facilities touched by ≥1 model, of which 249 cross-checked by both. Validator (`validate_invariants.py`) asserts these counts so any drift fails loudly.
 
 ## Reproducible rebuild
 
@@ -231,6 +244,8 @@ python3 scripts/databricks/run_sql_file.py scripts/databricks/08_outcome_feedbac
 python3 scripts/databricks/run_sql_file.py scripts/databricks/09_demo_seed.sql
 # vector search (10-30 min initial sync)
 python3 scripts/databricks/06_vector_search.py
+# verify nothing drifted (39 invariants — fails loudly on any mismatch)
+python3 scripts/databricks/validate_invariants.py
 ```
 
 Total time: ~5-10 minutes for tables + 10-30 min for VS index initial sync.

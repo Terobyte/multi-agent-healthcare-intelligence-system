@@ -21,17 +21,26 @@ for line in sql.split("\n"):
     if line.rstrip().endswith(";"):
         stmts.append("\n".join(buf).rstrip(";").strip())
         buf = []
+# flush trailing statement that lacks a semicolon (don't silently drop it)
+if buf:
+    tail = "\n".join(buf).strip()
+    if tail:
+        stmts.append(tail)
 
 print(f"running {len(stmts)} statements from {sys.argv[1]}")
 for i, stmt in enumerate(stmts, 1):
     payload = json.dumps({"statement": stmt, "warehouse_id": WH, "wait_timeout": "50s"})
     r = subprocess.run(["databricks","api","post","-p",PROFILE,"/api/2.0/sql/statements","--json",payload],
                        capture_output=True, text=True)
+    head = stmt.split("\n",1)[0][:80]
+    if r.returncode != 0:
+        print(f"  [{i}/{len(stmts)}] CLI_ERR  {head}")
+        print(f"      STDERR: {(r.stderr or '').strip()[:300]}")
+        sys.exit(2)
     d = json.loads(r.stdout) if r.stdout else {}
     state = d.get("status",{}).get("state","?")
     err = d.get("status",{}).get("error",{}).get("message","")
-    head = stmt.split("\n",1)[0][:80]
     print(f"  [{i}/{len(stmts)}] {state}  {head}")
-    if err:
+    if err or state == "FAILED":
         print(f"      ERR: {err[:300]}")
         sys.exit(2)

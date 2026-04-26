@@ -14,7 +14,16 @@ def db_sql(sql):
     payload = json.dumps({"statement": sql, "warehouse_id": WH, "wait_timeout": "50s"})
     r = subprocess.run(["databricks","api","post","-p",PROFILE,"/api/2.0/sql/statements","--json",payload],
                        capture_output=True, text=True, timeout=120)
-    return json.loads(r.stdout)
+    # surface CLI failures loudly — silent NULL upstream becomes silent {} downstream
+    if r.returncode != 0:
+        sys.exit(f"db_sql CLI error (rc={r.returncode}): {(r.stderr or r.stdout or '').strip()[:400]}")
+    try:
+        d = json.loads(r.stdout)
+    except json.JSONDecodeError:
+        sys.exit(f"db_sql: non-JSON response: {r.stdout[:400]}")
+    if d.get("status",{}).get("state") == "FAILED":
+        sys.exit(f"db_sql SQL FAILED: {d['status'].get('error',{}).get('message','?')[:400]}")
+    return d
 
 def db_llm(prompt, max_tokens=400):
     payload = json.dumps({
@@ -23,6 +32,10 @@ def db_llm(prompt, max_tokens=400):
     })
     r = subprocess.run(["databricks","api","post","-p",PROFILE,f"/serving-endpoints/{ENDPOINT}/invocations","--json",payload],
                        capture_output=True, text=True, timeout=120)
+    # per-call failures are tolerated (caller increments error count + skips row)
+    # but we annotate the failure mode so the JSONL post-mortem is actionable
+    if r.returncode != 0:
+        return f"CLI_ERR rc={r.returncode}: {(r.stderr or '').strip()[:200]}", 0
     try:
         d = json.loads(r.stdout)
         if "choices" in d:

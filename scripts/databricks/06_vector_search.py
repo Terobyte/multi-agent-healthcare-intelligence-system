@@ -43,10 +43,24 @@ def api(method, path, body=None):
     cmd = ["databricks","api",method,"-p",PROFILE,path]
     if body is not None:
         cmd += ["--json", json.dumps(body)]
-    out = sh(cmd, check=False)
+    # capture both stdout AND returncode — VS API often returns non-zero on
+    # benign cases (endpoint already exists) so we tolerate, but distinguish
+    # transport errors (rc != 0 with empty stdout AND non-empty stderr) from
+    # legitimate empty bodies (rc == 0 with empty stdout, e.g. 204 No Content).
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    out = r.stdout or ""
+    if r.returncode != 0 and not out.strip():
+        # transport-level failure: surface stderr instead of silently returning {}
+        # (otherwise caller polls a phantom state for 20 minutes before timing out)
+        print(f"  api({method} {path}) failed rc={r.returncode}: {(r.stderr or '').strip()[:200]}", file=sys.stderr)
+        return {}
     if not out.strip():
         return {}
-    return json.loads(out)
+    try:
+        return json.loads(out)
+    except json.JSONDecodeError:
+        print(f"  api({method} {path}) non-JSON: {out[:200]}", file=sys.stderr)
+        return {}
 
 # 1. build silver_facilities_text with PK + CDF
 print("→ building silver_facilities_text...")
