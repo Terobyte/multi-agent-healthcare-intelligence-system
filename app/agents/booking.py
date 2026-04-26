@@ -21,12 +21,13 @@ RESOURCE_TABLES = [
     ("drug_reservations",    "reservation_id", "RESERVED"),
 ]
 ALLOWED_TABLES = {t for t, _, _ in RESOURCE_TABLES}
-RESOURCE_TABLE_BY_SHORT = {
-    "bed": "bed_reservations",
-    "ambulance": "ambulance_dispatches",
-    "doctor": "doctor_slots",
-    "drug": "drug_reservations",
-}
+# Derive from RESOURCE_TABLES so adding a new resource (e.g. ("oxygen_cylinders",
+# ...)) automatically gets a rollback path. Hand-maintaining a parallel dict was
+# a drift hazard.
+RESOURCE_TABLE_BY_SHORT = {t.split("_")[0]: t for t, _, _ in RESOURCE_TABLES}
+assert set(RESOURCE_TABLE_BY_SHORT.values()) == ALLOWED_TABLES, (
+    "RESOURCE_TABLE_BY_SHORT drifted from RESOURCE_TABLES — short keys collided"
+)
 
 
 def book_atomic(facility_id: str, patient_id: str, factors_required: dict) -> dict:
@@ -40,6 +41,7 @@ def book_atomic(facility_id: str, patient_id: str, factors_required: dict) -> di
             "transaction_id": None, "status": "REJECTED",
             "resources": {}, "facility_id": facility_id,
             "reason": f"facility {facility_id} not in gold_trust_final",
+            "commit_error": None,
         }
 
     # 2. duplicate active txn — don't double-saga the same patient
@@ -53,6 +55,7 @@ def book_atomic(facility_id: str, patient_id: str, factors_required: dict) -> di
             "transaction_id": active[0][0], "status": "REJECTED",
             "resources": {}, "facility_id": facility_id,
             "reason": f"patient {patient_id} has active txn {active[0][0]}",
+            "commit_error": None,
         }
 
     # 3. parent insert (saga begin)
@@ -71,6 +74,7 @@ def book_atomic(facility_id: str, patient_id: str, factors_required: dict) -> di
             "transaction_id": None, "status": "REJECTED",
             "resources": {}, "facility_id": facility_id,
             "reason": "parent insert failed",
+            "commit_error": None,
         }
 
     # 4. child inserts (MERGE used for parameterized atomic INSERT — re-running
@@ -109,6 +113,7 @@ def book_atomic(facility_id: str, patient_id: str, factors_required: dict) -> di
             return {
                 "transaction_id": txn_id, "status": "COMMITTED",
                 "resources": results, "facility_id": facility_id,
+                "commit_error": None,
             }
         except Exception as e:
             # parent UPDATE failed after children OK — fall through to rollback.

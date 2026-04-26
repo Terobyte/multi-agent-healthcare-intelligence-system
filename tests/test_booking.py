@@ -109,6 +109,41 @@ def test_parent_commit_update_failure_triggers_child_cancel(monkeypatch):
         assert r["resources"][short] == "OK"
 
 
+def test_committed_path_has_commit_error_none(monkeypatch):
+    """Every book_atomic return path must include commit_error so callers can do
+    r['commit_error'] without KeyError (BookingOutput defaults handle the API edge,
+    but internal Python callers don't go through Pydantic)."""
+    def fake(query, params=None, _retries=1):
+        if "FROM workspace.default.gold_trust_final" in query:
+            return [("5603",)]
+        if "FROM workspace.default.txn_atomic" in query and query.lstrip().startswith("SELECT"):
+            return []
+        return None
+
+    monkeypatch.setattr(booking_module, "warehouse_query", fake)
+    r = book_atomic("5603", "smoke_p_committed_shape", {})
+    assert r["status"] == "COMMITTED"
+    assert "commit_error" in r and r["commit_error"] is None
+
+
+def test_all_return_dicts_validate_against_booking_output_schema(monkeypatch):
+    """Catch ResponseValidationError at unit-test time, not at /book runtime."""
+    from app.schemas import BookingOutput
+
+    scenarios = [
+        ("5603", "smoke_phantom", lambda q, p=None, _retries=1:
+            [] if "gold_trust_final" in q else None),
+        ("5603", "smoke_dup", lambda q, p=None, _retries=1:
+            [("5603",)] if "gold_trust_final" in q
+            else [("existing-txn",)] if "txn_atomic" in q and q.lstrip().startswith("SELECT")
+            else None),
+    ]
+    for fac, pat, fake in scenarios:
+        monkeypatch.setattr(booking_module, "warehouse_query", fake)
+        r = book_atomic(fac, pat, {})
+        BookingOutput(**r)  # raises ValidationError if shape wrong
+
+
 def test_phantom_facility_rejected_unit(monkeypatch):
     """Phantom facility check without warehouse — pure unit."""
     def fake(query, params=None, _retries=1):
