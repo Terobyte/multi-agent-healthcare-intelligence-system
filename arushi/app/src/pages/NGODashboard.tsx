@@ -90,6 +90,35 @@ export default function NGODashboard() {
     return "#87A878";
   };
 
+  // Five tones drawn from the warm-lantern peach/sage scale — keeps brand
+  // discipline (no new hues) while still letting each specialty read by color.
+  // Active = tinted fill + matching text/border. Inactive = neutral chrome
+  // with the specialty colour just on the text so the chip still hints
+  // identity at a glance.
+  const specialtyTone: Record<string, { active: string; inactive: string }> = {
+    All: {
+      active: "border-white/[0.20] bg-white/[0.08] text-cg-ivory",
+      inactive: "border-white/[0.08] bg-[rgba(20,20,21,0.6)] text-cg-mist1 hover:border-white/[0.16]",
+    },
+    Trauma: {
+      active: "border-[rgba(255,176,136,0.45)] bg-[rgba(255,176,136,0.18)] text-cg-peach",
+      inactive: "border-white/[0.08] bg-[rgba(20,20,21,0.6)] text-[#FFB088]/75 hover:border-[rgba(255,176,136,0.30)]",
+    },
+    Cardiac: {
+      active: "border-[rgba(232,123,67,0.50)] bg-[rgba(232,123,67,0.20)] text-[#FFB088]",
+      inactive: "border-white/[0.08] bg-[rgba(20,20,21,0.6)] text-[#E87B43]/85 hover:border-[rgba(232,123,67,0.35)]",
+    },
+    Neuro: {
+      active: "border-[rgba(200,228,208,0.45)] bg-[rgba(200,228,208,0.18)] text-cg-sage",
+      inactive: "border-white/[0.08] bg-[rgba(20,20,21,0.6)] text-[#C8E4D0]/75 hover:border-[rgba(200,228,208,0.30)]",
+    },
+    Pediatric: {
+      active: "border-[rgba(135,168,120,0.50)] bg-[rgba(135,168,120,0.20)] text-[#C8E4D0]",
+      inactive: "border-white/[0.08] bg-[rgba(20,20,21,0.6)] text-[#87A878] hover:border-[rgba(135,168,120,0.35)]",
+    },
+  };
+  const fallbackTone = specialtyTone.All;
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
@@ -129,21 +158,23 @@ export default function NGODashboard() {
                     <div className="h-[30px] w-[88px] animate-pulse rounded-full border border-white/[0.06] bg-[rgba(40,40,42,0.7)]" />
                   </>
                 ) : (
-                  specialtyOptions.map((item) => (
-                    <motion.button
-                      whileHover={{ y: -1.5 }}
-                      key={item}
-                      type="button"
-                      onClick={() => setSpecialty(item)}
-                      className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
-                        specialty === item
-                          ? "border-[rgba(255,176,136,0.30)] bg-[rgba(255,176,136,0.15)] text-cg-peach"
-                          : "border-white/[0.08] bg-[rgba(20,20,21,0.6)] text-cg-mist2 hover:border-white/[0.16]"
-                      }`}
-                    >
-                      {item}
-                    </motion.button>
-                  ))
+                  specialtyOptions.map((item) => {
+                    const tone = specialtyTone[item] ?? fallbackTone;
+                    const active = specialty === item;
+                    return (
+                      <motion.button
+                        whileHover={{ y: -1.5 }}
+                        key={item}
+                        type="button"
+                        onClick={() => setSpecialty(item)}
+                        className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                          active ? tone.active : tone.inactive
+                        }`}
+                      >
+                        {item}
+                      </motion.button>
+                    );
+                  })
                 )}
               </div>
             </div>
