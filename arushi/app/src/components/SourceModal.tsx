@@ -12,15 +12,20 @@ interface SourceModalProps {
 }
 
 export default function SourceModal({ open, title, evidence, details, onClose }: SourceModalProps) {
-  // Esc-to-close — universal modal keyboard affordance. Only attaches the
-  // listener while the modal is actually open so background views stay clean.
+  // Esc-to-close + body scroll lock. Both attach only while open so background
+  // views stay scrollable normally and listeners don't leak.
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
   }, [open, onClose]);
 
   return (

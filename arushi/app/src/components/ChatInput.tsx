@@ -33,8 +33,11 @@ export default function ChatInput({ onSend, loading }: ChatInputProps) {
           disabled={loading}
         />
         <button
-          className="flex h-11 w-11 items-center justify-center rounded-xl border border-slate-700 text-slate-300 transition hover:border-indigo-500 hover:text-indigo-400"
-          aria-label="Microphone"
+          className="flex h-11 w-11 items-center justify-center rounded-xl border border-slate-700 text-slate-500 disabled:cursor-not-allowed"
+          aria-label="Microphone — Hindi voice (Block 11) coming soon"
+          aria-disabled="true"
+          disabled
+          title="Hindi voice coming in Block 11 (Web Speech hook pending)"
           type="button"
         >
           <Mic size={18} />

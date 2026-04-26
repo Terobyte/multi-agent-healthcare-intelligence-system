@@ -6,7 +6,7 @@ import HospitalCard from "../components/HospitalCard";
 import HospitalMap from "../components/HospitalMap";
 import ReasoningPanel, { type RenderedReasoningRow } from "../components/ReasoningPanel";
 import SourceModal from "../components/SourceModal";
-import { recommend, reserve, streamReasoning } from "../lib/api";
+import { isDegraded, recommend, reserve, streamReasoning } from "../lib/api";
 import type { Hospital, TrustEvidence } from "../lib/types";
 
 const agentById: Record<string, RenderedReasoningRow["agent"]> = {
@@ -36,11 +36,14 @@ export default function PatientFlow() {
     evidence: "",
   });
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  // Block setState after unmount and stop the auto-fetch effect from re-firing
-  // forever when "no match" leaves both hospitals + rows empty (audit finding).
+  const [degraded, setDegraded] = useState(false);
+  // Block setState after unmount + tag every async run with a request id so a
+  // stale stream from a prior recommend() can be ignored when the user submits
+  // a new query mid-flight (race-condition fix from audit).
   const isMountedRef = useRef(true);
   const hasInitializedRef = useRef(false);
   const bookingTimersRef = useRef<number[]>([]);
+  const requestSeqRef = useRef(0);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -53,15 +56,17 @@ export default function PatientFlow() {
 
   const runRecommendation = useCallback(async (query: string) => {
     if (!isMountedRef.current) return;
+    const myReq = ++requestSeqRef.current;
     setIsLoading(true);
     setErrorMessage(null);
     setRows([]);
     try {
       const response = await recommend({ query });
-      if (!isMountedRef.current) return;
+      if (!isMountedRef.current || myReq !== requestSeqRef.current) return;
       setHospitals(response.hospitals);
+      setDegraded(isDegraded());
       await streamReasoning((msgId, token) => {
-        if (!isMountedRef.current) return;
+        if (!isMountedRef.current || myReq !== requestSeqRef.current) return;
         setRows((prev) => {
           const existing = prev.find((x) => x.id === msgId);
           if (!existing) {
@@ -74,31 +79,38 @@ export default function PatientFlow() {
         });
       });
     } catch {
-      if (!isMountedRef.current) return;
-      // Keep last known hospitals/rows visible — wiping them on a transient
-      // failure is worse UX than showing slightly stale data with a banner.
+      if (!isMountedRef.current || myReq !== requestSeqRef.current) return;
+      // Allow retry — a failed first auto-fetch shouldn't lock out the page.
+      _autoQuerySent = false;
       setErrorMessage("Could not fetch recommendations. Try again in a few seconds.");
     } finally {
-      if (isMountedRef.current) setIsLoading(false);
+      if (isMountedRef.current && myReq === requestSeqRef.current) setIsLoading(false);
     }
   }, []);
 
-  const reserveHospital = async (hospitalId: string) => {
-    // Cancel any timers from a prior reserve so a new click can't race the
-    // tail of an earlier success/rollback animation chain (audit finding).
+  const reserveHospital = useCallback(async (hospitalId: string) => {
     bookingTimersRef.current.forEach((id) => window.clearTimeout(id));
     bookingTimersRef.current = [];
     setReservingId(hospitalId);
     setBookingState("reserving");
     setErrorMessage(null);
     try {
-      await reserve({ hospitalId });
+      const result = await reserve({ hospitalId });
       if (!isMountedRef.current) return;
-      setBookingState("success");
-      bookingTimersRef.current.push(
-        window.setTimeout(() => isMountedRef.current && setBookingState("rollback"), 1800),
-        window.setTimeout(() => isMountedRef.current && setBookingState("idle"), 2800),
-      );
+      if (!result.success) {
+        // Backend returned ROLLED_BACK or REJECTED — treat as failure visually.
+        setBookingState("rollback");
+        setErrorMessage("Reservation rolled back. Try a different hospital.");
+        bookingTimersRef.current.push(
+          window.setTimeout(() => isMountedRef.current && setBookingState("idle"), 1300),
+        );
+      } else {
+        setBookingState("success");
+        bookingTimersRef.current.push(
+          window.setTimeout(() => isMountedRef.current && setBookingState("rollback"), 1800),
+          window.setTimeout(() => isMountedRef.current && setBookingState("idle"), 2800),
+        );
+      }
     } catch {
       if (!isMountedRef.current) return;
       setBookingState("rollback");
@@ -109,10 +121,31 @@ export default function PatientFlow() {
     } finally {
       if (isMountedRef.current) setReservingId(null);
     }
-  };
+  }, []);
+
+  const onTrustChipClick = useCallback(
+    ({
+      hospitalName,
+      trustKind,
+      source,
+      evidence,
+    }: {
+      hospitalName: string;
+      trustKind: string;
+      source: string;
+      evidence?: TrustEvidence;
+    }) => {
+      setSourceModal({
+        open: true,
+        title: `${hospitalName} - ${trustKind}`,
+        evidence: source,
+        details: evidence,
+      });
+    },
+    [],
+  );
 
   useEffect(() => {
-    // Only auto-query once per page load, even after tab-switch remounts.
     if (_autoQuerySent || hasInitializedRef.current) return;
     hasInitializedRef.current = true;
     _autoQuerySent = true;
@@ -124,6 +157,11 @@ export default function PatientFlow() {
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.1fr_0.9fr]">
         <div className="space-y-4">
           <ChatInput onSend={runRecommendation} loading={isLoading} />
+          {degraded ? (
+            <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-2 text-xs text-amber-200">
+              Backend unreachable — showing offline demo data.
+            </div>
+          ) : null}
           {errorMessage ? (
             <div className="rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-2 text-sm text-rose-200">
               {errorMessage}
@@ -140,14 +178,7 @@ export default function PatientFlow() {
                 key={hospital.id}
                 hospital={hospital}
                 onReserve={reserveHospital}
-                onTrustChipClick={({ hospitalName, trustKind, source, evidence }) =>
-                  setSourceModal({
-                    open: true,
-                    title: `${hospitalName} - ${trustKind}`,
-                    evidence: source,
-                    details: evidence,
-                  })
-                }
+                onTrustChipClick={onTrustChipClick}
                 reserving={reservingId === hospital.id}
               />
             ))}

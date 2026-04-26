@@ -65,7 +65,7 @@ export default function App() {
           })}
         </div>
 
-        <AnimatePresence mode="sync">
+        <AnimatePresence mode="wait">
           <motion.div
             key={activeTab}
             initial={{ opacity: 0, y: 10 }}

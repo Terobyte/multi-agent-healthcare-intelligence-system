@@ -13,15 +13,17 @@ export default function DoctorCopilot() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
+    let active = true;
     const load = async () => {
       setIsLoading(true);
       setErrorMessage(null);
-      // allSettled so a hospital fetch failure doesn't blank out the copilot
-      // UI (and vice versa). Each branch renders best-effort independently.
       const [copilotResult, hospitalResult] = await Promise.allSettled([
         getDoctorCopilotData(),
         recommend({ query: "Doctor copilot baseline hospitals" }),
       ]);
+      // Guard against tab-switch / unmount during the await — without this
+      // the setState calls would leak warnings in dev StrictMode.
+      if (!active) return;
 
       if (copilotResult.status === "fulfilled") {
         setData(copilotResult.value);
@@ -42,6 +44,9 @@ export default function DoctorCopilot() {
     };
 
     void load();
+    return () => {
+      active = false;
+    };
   }, []);
 
   const receivingHospitals = useMemo(

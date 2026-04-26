@@ -20,19 +20,25 @@ export default function NGODashboard() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
+    let active = true;
     const load = async () => {
       setIsLoading(true);
       setErrorMessage(null);
       try {
         const result = await getNGODashboardData();
+        if (!active) return;
         setData(result);
       } catch {
+        if (!active) return;
         setErrorMessage("Could not load NGO dashboard data.");
       } finally {
-        setIsLoading(false);
+        if (active) setIsLoading(false);
       }
     };
     void load();
+    return () => {
+      active = false;
+    };
   }, []);
 
   const filteredPins = useMemo(() => {
@@ -146,7 +152,12 @@ export default function NGODashboard() {
         </div>
 
         <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-3 shadow-premium">
-          <MapContainer center={[22.5, 79]} zoom={4.8} className="h-[760px] w-full rounded-xl">
+          <MapContainer
+            center={[22.5, 79]}
+            zoom={5}
+            scrollWheelZoom={false}
+            className="h-[760px] w-full rounded-xl"
+          >
             <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" />
             {filteredPins.map((pin) => (
               <Marker key={pin.id} position={[pin.lat, pin.lng]} icon={ngoMarker}>
