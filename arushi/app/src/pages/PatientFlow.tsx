@@ -6,8 +6,13 @@ import HospitalCard from "../components/HospitalCard";
 import HospitalMap from "../components/HospitalMap";
 import ReasoningPanel, { type RenderedReasoningRow } from "../components/ReasoningPanel";
 import SourceModal from "../components/SourceModal";
+import { api } from "../api";
 import { isBackendConfigured, isDegraded, recommend, reserve, streamReasoning } from "../lib/api";
 import type { Hospital, TrustEvidence } from "../lib/types";
+
+// Backend voice allowlist — only these facility ids have pre-baked Fish Audio
+// narration in app/sponsor/_demo/. Any other id silently skips playback.
+const NARRATE_ALLOWLIST = new Set(["5603", "8888", "959"]);
 
 const agentById: Record<string, RenderedReasoningRow["agent"]> = {
   route_1: "Routing Agent",
@@ -43,6 +48,10 @@ export default function PatientFlow() {
   const isMountedRef = useRef(true);
   const hasInitializedRef = useRef(false);
   const bookingTimersRef = useRef<number[]>([]);
+  // Track the live audio + its blob URL so we can stop and revoke on unmount
+  // or on a fresh booking — leaving them around leaks blob URLs in the demo.
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioUrlRef = useRef<string | null>(null);
   const requestSeqRef = useRef(0);
   // Separate sequence for reserve flow — rapid double-clicks on different
   // hospitals would otherwise cross-contaminate booking state when responses
@@ -59,7 +68,50 @@ export default function PatientFlow() {
       isMountedRef.current = false;
       bookingTimersRef.current.forEach((id) => window.clearTimeout(id));
       bookingTimersRef.current = [];
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.src = "";
+        audioRef.current = null;
+      }
+      if (audioUrlRef.current) {
+        URL.revokeObjectURL(audioUrlRef.current);
+        audioUrlRef.current = null;
+      }
     };
+  }, []);
+
+  const playNarration = useCallback(async (hospitalId: string, hospitalName: string) => {
+    if (!NARRATE_ALLOWLIST.has(hospitalId)) return;
+    try {
+      const blob = await api.narrate(hospitalId, "hi", hospitalName, 7);
+      if (!blob || !isMountedRef.current) return;
+      // Stop any prior narration and free the previous blob URL before
+      // starting a new one — back-to-back reservations would otherwise
+      // overlap audio and leak object URLs.
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.src = "";
+      }
+      if (audioUrlRef.current) {
+        URL.revokeObjectURL(audioUrlRef.current);
+      }
+      const url = URL.createObjectURL(blob);
+      audioUrlRef.current = url;
+      const audio = new Audio(url);
+      audioRef.current = audio;
+      audio.addEventListener("ended", () => {
+        if (audioUrlRef.current === url) {
+          URL.revokeObjectURL(url);
+          audioUrlRef.current = null;
+        }
+      }, { once: true });
+      void audio.play().catch(() => {
+        // Autoplay can be blocked on first interaction-less load; the user
+        // clicked Reserve so this should rarely fire, but stay silent if it does.
+      });
+    } catch {
+      // Narration is best-effort — never block the booking confirmation UI.
+    }
   }, []);
 
   const runRecommendation = useCallback(async (query: string) => {
@@ -142,6 +194,11 @@ export default function PatientFlow() {
         );
       } else {
         setBookingState("success");
+        // Fire-and-forget Fish Audio narration — Hindi voice confirms ambulance
+        // dispatch. Allowlist-gated, no error if the flag is off or the hospital
+        // id has no pre-baked audio.
+        const booked = hospitals.find((h) => h.id === hospitalId);
+        void playNarration(hospitalId, booked?.name ?? "");
         bookingTimersRef.current.push(
           window.setTimeout(() => {
             if (isMountedRef.current && myReq === reserveSeqRef.current) setBookingState("idle");
@@ -160,7 +217,7 @@ export default function PatientFlow() {
     } finally {
       if (isMountedRef.current && myReq === reserveSeqRef.current) setReservingId(null);
     }
-  }, []);
+  }, [hospitals, playNarration]);
 
   const onTrustChipClick = useCallback(
     ({

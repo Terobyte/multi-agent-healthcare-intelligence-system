@@ -152,6 +152,34 @@ export const api = {
       { query, conversation_id: conversation_id ?? null },
       { mutating: true, signal },
     ),
+  // Sponsor route — Fish Audio TTS narration. Returns binary audio (mp3),
+  // not JSON, so this bypasses the normal call() helper. Backend gates the
+  // route behind SPONSOR_VOICE=true; a 404 here means the flag is off and
+  // the caller should silently skip playback rather than surface an error.
+  narrate: async (
+    demo_id: string,
+    lang: "hi" | "ur" = "hi",
+    hospital_name = "",
+    eta_min = 7,
+    signal?: AbortSignal,
+  ): Promise<Blob | null> => {
+    if (!HAS_REAL_BACKEND) return null;
+    if (!DEMO_KEY) return null;
+    const r = await fetch(`${BASE}/sponsor/narrate`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "X-Demo-Key": DEMO_KEY,
+      },
+      body: JSON.stringify({ demo_id, lang, hospital_name, eta_min }),
+      signal,
+    });
+    // 404 = flag disabled, 503 = no audio available; both are non-fatal —
+    // narration is a nice-to-have, not a critical path.
+    if (r.status === 404 || r.status === 503) return null;
+    if (!r.ok) return null;
+    return await r.blob();
+  },
 };
 
 export interface GenieResponse {

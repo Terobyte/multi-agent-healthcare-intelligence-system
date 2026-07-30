@@ -37,3 +37,15 @@ docs/PLAN-REMAINING*.md
 tero/
 mian/
 .superpowers/
+
+# Tooling scratch
+.claude/
+.playwright-mcp/
+
+# Dev screenshots from the UI iteration loop
+cg-*.png
+
+# Generated demo media (large; ship as GitHub Release assets instead)
+*.mp4
+demo_voiceover/
+design-inspiration/

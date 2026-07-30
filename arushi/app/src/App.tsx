@@ -1,4 +1,4 @@
-import { AnimatePresence, motion } from "framer-motion";
+import { motion } from "framer-motion";
 import { ActivitySquare, Bot, Landmark, type LucideIcon } from "lucide-react";
 import { useMemo, useState } from "react";
 import DoctorCopilot from "./pages/DoctorCopilot";
@@ -65,17 +65,11 @@ export default function App() {
           </div>
         </header>
 
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={activeTab}
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -6 }}
-            transition={{ duration: 0.22 }}
-          >
-            <ActivePage />
-          </motion.div>
-        </AnimatePresence>
+        {/* No AnimatePresence wrapper: in-flight setState from PatientFlow's
+            recommend() during the exit animation deadlocked framer-motion 11
+            and left the next page never mounted (black screen). Each page's
+            root motion.div handles its own fade-in. */}
+        <ActivePage key={activeTab} />
       </div>
     </div>
   );
